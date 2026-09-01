@@ -1,0 +1,459 @@
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { MapContainer, TileLayer, CircleMarker, Popup, Polygon } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import { fetchHeatmap, fetchHeatmapHistory } from "../../services/heatmap.service.js";
+
+const riskColor = (level) => {
+  if (level === "low")      return { hex: "#22c55e", bg: "bg-green-100",  text: "text-green-700",  dot: "bg-green-500",  bar: "bg-green-400" };
+  if (level === "moderate") return { hex: "#eab308", bg: "bg-yellow-100", text: "text-yellow-700", dot: "bg-yellow-500", bar: "bg-yellow-400" };
+  if (level === "high")     return { hex: "#f97316", bg: "bg-orange-100", text: "text-orange-700", dot: "bg-orange-500", bar: "bg-orange-400" };
+  if (level === "critical") return { hex: "#ef4444", bg: "bg-red-100",    text: "text-red-700",    dot: "bg-red-500",    bar: "bg-red-400" };
+  return { hex: "#9ca3af", bg: "bg-gray-100", text: "text-gray-600", dot: "bg-gray-400", bar: "bg-gray-300" };
+};
+
+const stockBadge = (status) => {
+  if (status === "OK")       return "bg-green-100 text-green-700";
+  if (status === "Low")      return "bg-yellow-100 text-yellow-700";
+  if (status === "Critical") return "bg-orange-100 text-orange-700";
+  if (status === "Stockout") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-600";
+};
+
+const PERIODS = [
+  { value: "daily",     label: "Current Month" },
+  { value: "monthly",   label: "Last 3 Months" },
+  { value: "all_time",  label: "Full Treatment Period" },
+];
+
+
+
+const HeatMapPanel = () => {
+  const [snapshots, setSnapshots]           = useState([]);
+  const [loading, setLoading]               = useState(true);
+  const [error, setError]                   = useState("");
+  const [period, setPeriod]                 = useState("monthly");
+  const [search, setSearch]                 = useState("");
+  const [sortBy, setSortBy]                 = useState("heat_intensity");
+  const [selected, setSelected]             = useState(null);
+  const [history, setHistory]               = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [view, setView]                     = useState("map"); // "map" | "list"
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await fetchHeatmap({ period });
+        if (data.success) {
+          const raw = data.data ?? [];
+          setSnapshots(Array.isArray(raw) ? raw : []);
+        } else {
+          setError(data.message || "Failed to load heatmap.");
+        }
+      } catch {
+        setError("Connection error.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [period]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const loadHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        const data = await fetchHeatmapHistory(selected.barangay_id, { period, limit: 12 });
+        if (data.success) {
+          const raw = data.data ?? [];
+          setHistory(Array.isArray(raw) ? raw : []);
+        }
+      } catch {
+        setHistory([]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    loadHistory();
+  }, [selected, period]);
+
+  const filtered = snapshots
+    .filter(s => s.barangay_name?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === "compliance_rate") return a.compliance_rate - b.compliance_rate;
+      if (sortBy === "active_cases")    return b.active_cases - a.active_cases;
+      return b.heat_intensity - a.heat_intensity;
+    });
+
+  const totalCases      = snapshots.reduce((s, b) => s + (b.active_cases ?? 0), 0);
+  const totalDefaulters = snapshots.reduce((s, b) => s + (b.defaulter_count ?? 0), 0);
+  const totalAtRisk     = snapshots.reduce((s, b) => s + (b.at_risk_count ?? 0), 0);
+  const criticalCount   = snapshots.filter(b => b.risk_level === "critical").length;
+  const avgCompliance   = snapshots.length
+    ? (snapshots.reduce((s, b) => s + (b.compliance_rate ?? 0), 0) / snapshots.length).toFixed(1)
+    : 0;
+
+  // Derive map center from snapshots
+  const mapCenter = snapshots.length > 0 && snapshots[0].coordinates?.coordinates
+    ? [snapshots[0].coordinates.coordinates[1], snapshots[0].coordinates.coordinates[0]]
+    : [14.568, 121.080]; // fallback: Pasig area
+
+  return (
+    <div className="space-y-6">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Compliance Heat Map</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Municipality-wide TB compliance overview by barangay</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* View Toggle */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-1 mr-2">
+            {["map", "list"].map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 rounded-md text-xs font-semibold capitalize transition ${
+                  view === v ? "bg-white shadow text-blue-600" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {v === "map" ? "🗺 Map" : "☰ List"}
+              </button>
+            ))}
+          </div>
+          {/* Period Toggle */}
+         {PERIODS.map(p => (
+          <button
+            key={p.value}
+            onClick={() => { setPeriod(p.value); setSelected(null); }}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${
+              period === p.value
+                ? "bg-blue-600 text-white"
+                : "bg-white border border-gray-200 text-gray-600 hover:border-blue-400"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-5 gap-4">
+        {[
+          { label: "Total Active Cases",  val: totalCases,          color: "text-blue-600" },
+          { label: "At Risk",             val: totalAtRisk,         color: "text-yellow-600" },
+          { label: "Defaulters",          val: totalDefaulters,     color: "text-red-600" },
+          { label: "Critical Barangays",  val: criticalCount,       color: "text-orange-600" },
+          { label: "Avg Compliance",      val: `${avgCompliance}%`, color: "text-green-600" },
+        ].map((c, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+            <p className="text-xs text-gray-500 mb-1">{c.label}</p>
+            <p className={`text-2xl font-bold ${c.color}`}>{c.val}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-6">
+
+        {/* MAP VIEW */}
+        {view === "map" && (
+          <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* Legend */}
+            <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-4 text-xs text-gray-500">
+              <span className="font-semibold text-gray-600 mr-1">Risk:</span>
+              {["low", "moderate", "high", "critical"].map(l => {
+                const c = riskColor(l);
+                return (
+                  <span key={l} className="flex items-center gap-1 capitalize">
+                    <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`}></span> {l}
+                  </span>
+                );
+              })}
+              <span className="ml-auto text-gray-400 italic flex items-center gap-2">
+                <span className="bg-blue-50 text-blue-600 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-100">
+                  {PERIODS.find(p => p.value === period)?.label}
+                </span>
+                Click a barangay marker for details
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="h-[520px] flex items-center justify-center text-gray-400 text-sm">
+                Loading map data...
+              </div>
+            ) : (
+              <MapContainer
+                center={mapCenter}
+                zoom={14}
+                style={{ height: "520px", width: "100%" }}
+                className="z-0"
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+
+                {snapshots.map((brgy, i) => {
+                  if (!brgy.coordinates?.coordinates) return null;
+                  const [lng, lat] = brgy.coordinates.coordinates;
+                  const c = riskColor(brgy.risk_level);
+                  const isSelected = selected?.barangay_id === brgy.barangay_id;
+
+                  // Boundary polygon
+                  const polygonCoords = brgy.boundary_geojson?.coordinates?.[0]?.map(
+                    ([lng, lat]) => [lat, lng]
+                  );
+
+                  return (
+                    <div key={i}>
+                      {/* Boundary fill */}
+                      {polygonCoords && (
+                        <Polygon
+                          positions={polygonCoords}
+                          pathOptions={{
+                            color: c.hex,
+                            fillColor: c.hex,
+                            fillOpacity: isSelected ? 0.4 : 0.15,
+                            weight: isSelected ? 2 : 1,
+                          }}
+                          eventHandlers={{ click: () => setSelected(isSelected ? null : brgy) }}
+                        />
+                      )}
+
+                      {/* Marker */}
+                      <CircleMarker
+                        center={[lat, lng]}
+                        radius={10 + (brgy.heat_intensity ?? 0) * 14}
+                        pathOptions={{
+                          color: c.hex,
+                          fillColor: c.hex,
+                          fillOpacity: 0.8,
+                          weight: isSelected ? 3 : 1.5,
+                        }}
+                        eventHandlers={{ click: () => setSelected(isSelected ? null : brgy) }}
+                      >
+                        <Popup>
+                          <div className="text-xs space-y-1 min-w-[160px]">
+                            <p className="font-bold text-sm text-gray-800">{brgy.barangay_name}</p>
+                            <p className="text-gray-500">{brgy.health_center_name}</p>
+                            <hr />
+                            <p>Compliance: <b className="text-blue-600">{brgy.compliance_rate}%</b></p>
+                            <p>Active Cases: <b>{brgy.active_cases}</b></p>
+                            <p>At Risk: <b className="text-yellow-600">{brgy.at_risk_count}</b></p>
+                            <p>Defaulters: <b className="text-red-500">{brgy.defaulter_count}</b></p>
+                            <p>Stock: <b>{brgy.stock_status}</b></p>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    </div>
+                  );
+                })}
+              </MapContainer>
+            )}
+          </div>
+        )}
+
+        {/* LIST VIEW */}
+        {view === "list" && (
+          <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b flex items-center gap-3">
+              <input
+                type="text"
+                placeholder="Search barangay..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              >
+                <option value="heat_intensity">Sort: Heat Intensity</option>
+                <option value="compliance_rate">Sort: Compliance (asc)</option>
+                <option value="active_cases">Sort: Active Cases</option>
+              </select>
+            </div>
+
+            <div className="px-5 py-2 border-b bg-gray-50 flex items-center gap-4 text-xs text-gray-500">
+              {["low", "moderate", "high", "critical"].map(l => {
+                const c = riskColor(l);
+                return (
+                  <span key={l} className="flex items-center gap-1 capitalize">
+                    <span className={`w-2 h-2 rounded-full ${c.dot}`}></span> {l}
+                  </span>
+                );
+              })}
+            </div>
+
+            <div className="divide-y max-h-[520px] overflow-y-auto">
+              {loading ? (
+                <div className="p-8 text-center text-gray-400 text-sm">Loading...</div>
+              ) : filtered.length === 0 ? (
+                <div className="p-8 text-center text-gray-400 text-sm">No barangays found.</div>
+              ) : filtered.map((brgy, i) => {
+                const c = riskColor(brgy.risk_level);
+                const isSelected = selected?.barangay_id === brgy.barangay_id;
+                return (
+                  <div
+                    key={i}
+                    onClick={() => setSelected(isSelected ? null : brgy)}
+                    className={`px-5 py-4 cursor-pointer transition-colors hover:bg-gray-50 ${isSelected ? "bg-blue-50 border-l-4 border-blue-500" : ""}`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`}></span>
+                        <span className="font-semibold text-gray-800 text-sm">{brgy.barangay_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${c.bg} ${c.text}`}>
+                          {brgy.risk_level}
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${stockBadge(brgy.stock_status)}`}>
+                          Stock: {brgy.stock_status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                        <div className={`h-1.5 rounded-full ${c.bar}`} style={{ width: `${brgy.compliance_rate ?? 0}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 w-12 text-right">{brgy.compliance_rate ?? 0}%</span>
+                    </div>
+                    <div className="flex gap-4 mt-1.5 text-xs text-gray-500">
+                      <span>Cases: <b className="text-gray-700">{brgy.active_cases}</b></span>
+                      <span>At Risk: <b className="text-yellow-600">{brgy.at_risk_count}</b></span>
+                      <span>Defaulters: <b className="text-red-500">{brgy.defaulter_count}</b></span>
+                      <span>Esc L3: <b className="text-orange-600">{brgy.escalation_counts?.level_3 ?? 0}</b></span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Detail Panel */}
+        {selected && (
+          <div className="w-80 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-800">{selected.barangay_name}</h3>
+                <p className="text-xs text-gray-400">{selected.health_center_name || "—"}</p>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div className="flex items-center gap-3">
+                <div className={`flex-1 rounded-lg p-3 ${riskColor(selected.risk_level).bg}`}>
+                  <p className="text-xs text-gray-500">Risk Level</p>
+                  <p className={`text-lg font-bold capitalize ${riskColor(selected.risk_level).text}`}>{selected.risk_level}</p>
+                </div>
+                <div className="flex-1 rounded-lg p-3 bg-blue-50">
+                  <p className="text-xs text-gray-500">Compliance</p>
+                  <p className="text-lg font-bold text-blue-600">{selected.compliance_rate}%</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Patient Breakdown</p>
+                <div className="space-y-1.5">
+                  {[
+                    { label: "Active Cases", val: selected.active_cases,    color: "text-blue-600" },
+                    { label: "At Risk",      val: selected.at_risk_count,   color: "text-yellow-600" },
+                    { label: "Defaulters",   val: selected.defaulter_count, color: "text-red-600" },
+                  ].map((r, i) => (
+                    <div key={i} className="flex justify-between text-sm">
+                      <span className="text-gray-600">{r.label}</span>
+                      <span className={`font-semibold ${r.color}`}>{r.val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Open Escalations</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 2, 3].map(lvl => (
+                    <div key={lvl} className="bg-gray-50 rounded-lg p-2 text-center">
+                      <p className="text-xs text-gray-400">Level {lvl}</p>
+                      <p className={`text-xl font-bold ${lvl === 3 ? "text-red-500" : lvl === 2 ? "text-orange-500" : "text-yellow-500"}`}>
+                        {selected.escalation_counts?.[`level_${lvl}`] ?? 0}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Stock Status</p>
+                <span className={`text-xs px-2 py-1 rounded-full font-semibold ${stockBadge(selected.stock_status)}`}>
+                  {selected.stock_status}
+                </span>
+              </div>
+
+              <button
+                onClick={() => navigate(`/dashboard/barangays/${selected.barangay_id}`, {
+                  state: { returnPanel: "Heat Map" }
+                })}
+                className="w-full py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+              >
+                View Barangay Details
+              </button>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Heat Intensity</p>
+                <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-2 rounded-full bg-gradient-to-r from-yellow-400 to-red-500 transition-all"
+                    style={{ width: `${(selected.heat_intensity ?? 0) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1 text-right">{((selected.heat_intensity ?? 0) * 100).toFixed(1)}%</p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Compliance Trend</p>
+                {loadingHistory ? (
+                  <p className="text-xs text-gray-400">Loading history...</p>
+                ) : history.length === 0 ? (
+                  <p className="text-xs text-gray-400">No history available.</p>
+                ) : (
+                  <div className="flex items-end gap-1 h-16">
+                    {history.map((h, i) => {
+                      const c = riskColor(h.risk_level);
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                          <div
+                            className={`w-full rounded-sm ${c.bar} transition-all`}
+                            style={{ height: `${h.compliance_rate ?? 0}%`, minHeight: "4px" }}
+                          />
+                          <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] bg-gray-800 text-white px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none">
+                            {h.compliance_rate}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default HeatMapPanel;
