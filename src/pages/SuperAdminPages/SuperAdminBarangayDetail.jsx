@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import Layout from "../../components/Layout";
+import { authFetch } from "../../services/auth.service.js";
 import { fetchInventoryByBarangay, createNurse, fetchNurses } from "../../services/barangay.service.js";
 import { fetchPatients, fetchEscalatedPatients, exportPatientsPdf } from "../../services/patient.service.js";
 import { fetchStockRequestAlerts, acknowledgeAlert, resolveAlert } from "../../services/alert.service.js";
@@ -180,9 +181,7 @@ const BarangayDetailPage = () => {
 
     const loadBarangayData = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/barangays/${barangay_id}`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-        });
+        const res = await authFetch(`${import.meta.env.VITE_API_URL}/api/barangays/${barangay_id}`);
         const data = await res.json();
         if (data.success) setBarangayData(data.data || data.barangay);
       } catch (err) {

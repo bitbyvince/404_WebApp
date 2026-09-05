@@ -1,28 +1,24 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import logo404 from "../assets/logo404.png";
 
-// ── Respiratory System SVG Illustration ───────────────────────────────────
+// ── Respiratory System Logo ────────────────────────────────────────────────
 const LungIllustration = () => (
-  <svg viewBox="0 0 200 220" width="200" height="220" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="100" cy="110" r="90" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-    <circle cx="100" cy="110" r="72" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
-    <circle cx="100" cy="110" r="54" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
-    <line x1="100" y1="30" x2="100" y2="80" stroke="rgba(255,255,255,0.6)" strokeWidth="3" strokeLinecap="round"/>
-    <path d="M100 80 Q80 90 72 105" stroke="rgba(255,255,255,0.6)" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-    <path d="M100 80 Q120 90 128 105" stroke="rgba(255,255,255,0.6)" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-    <path d="M72 105 Q55 120 58 148 Q62 170 80 175 Q90 178 95 165 L95 105 Z"
-      stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" fill="rgba(255,255,255,0.06)"/>
-    <path d="M128 105 Q145 120 142 148 Q138 170 120 175 Q110 178 105 165 L105 105 Z"
-      stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" fill="rgba(255,255,255,0.06)"/>
-    <path d="M72 105 Q65 118 63 130" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-    <path d="M72 105 Q70 122 72 135" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-    <path d="M72 105 Q76 120 78 132" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-    <path d="M128 105 Q135 118 137 130" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-    <path d="M128 105 Q130 122 128 135" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-    <path d="M128 105 Q124 120 122 132" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-    <circle cx="100" cy="28" r="5" fill="#e9b84a"/>
-    <text x="100" y="200" textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize="11" fontFamily="Georgia, serif" letterSpacing="1">Respiratory System</text>
-  </svg>
+  <div style={{ width: 200, textAlign: "center" }}>
+    <div style={{
+      position: "relative", width: 200, height: 200,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      margin: "0 auto",
+    }}>
+      <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.08)" }} />
+      <div style={{ position: "absolute", inset: 14, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.12)" }} />
+      <div style={{ position: "absolute", inset: 28, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.15)" }} />
+      <img src={logo404} alt="RespiraTrack logo" style={{ width: 130, height: 130, objectFit: "contain" }} />
+    </div>
+    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", letterSpacing: "1px", marginTop: 8 }}>
+      Respiratory System
+    </div>
+  </div>
 );
 
 // ── Navbar ─────────────────────────────────────────────────────────────────
@@ -54,13 +50,10 @@ const Navbar = () => {
         onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
         <div style={{
           width: 36, height: 36, borderRadius: 10,
-          background: "linear-gradient(135deg, #1a3a6b, #2d5fc4)",
           display: "flex", alignItems: "center", justifyContent: "center",
+          overflow: "hidden",
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-            <path d="M12 6v6l4 2"/>
-          </svg>
+          <img src={logo404} alt="RespiraTrack logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         </div>
         <div>
           <div style={{ fontWeight: 700, fontSize: 16, color: "#0f2647", letterSpacing: "-0.3px", lineHeight: 1.1 }}>
@@ -97,14 +90,14 @@ const Navbar = () => {
         <button
         onClick={() => navigate("/login")}
         style={{
-            background: "#ffffff", color: "#000000",
+            background: "#1a3a6b", color: "#ffffff",
             border: "none", borderRadius: 8,
             padding: "8px 20px", fontSize: 14,
             fontWeight: 600, cursor: "pointer",
             marginLeft: 8,
         }}
         >
-        `
+        Login
         </button>
       </div>
     </nav>
@@ -215,7 +208,7 @@ const aboutCards = [
         <path d="M8 12a4 4 0 018 0"/>
       </svg>
     ),
-    bg: "#eef3ff", border: "#3b6fd4", highlight: true,
+    bg: "#eef3ff", border: "#3b6fd4",
     title: "How it spreads",
     text: "TB spreads through the air when an infected person coughs, sneezes, or speaks. Prolonged close contact is the main risk.",
   },
@@ -243,45 +236,57 @@ const aboutCards = [
   },
 ];
 
-const AboutSection = () => (
-  <section id="about" style={{ background: "#f0f4f9", padding: "72px 80px" }}>
-    <div style={{
-      display: "inline-block", border: "1px solid #c8d4e3",
-      borderRadius: 20, padding: "3px 12px",
-      fontSize: 11, color: "#4a6080", letterSpacing: "0.5px", marginBottom: 20,
-      background: "#fff", fontWeight: 600, textTransform: "uppercase",
-    }}>
-      About TB
-    </div>
-    <h2 style={{ fontSize: 36, fontWeight: 800, color: "#0f2647", margin: "0 0 10px", letterSpacing: "-0.5px" }}>
-      What is tuberculosis?
-    </h2>
-    <p style={{ fontSize: 15, color: "#5c7490", marginBottom: 36 }}>
-      Understanding TB is the first step toward prevention and treatment.
-    </p>
+const AboutSection = () => {
+  const [activeTitle, setActiveTitle] = useState("How it spreads");
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-      {aboutCards.map((card) => (
-        <div key={card.title} style={{
-          background: "#fff",
-          border: `1.5px solid ${card.highlight ? card.border : "#e2eaf3"}`,
-          borderRadius: 14, padding: "24px 22px",
-          boxShadow: card.highlight ? "0 0 0 2px rgba(59,111,212,0.08)" : "none",
-        }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 10,
-            background: card.bg, display: "flex", alignItems: "center", justifyContent: "center",
-            marginBottom: 16,
-          }}>
-            {card.icon}
-          </div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: "#0f2647", marginBottom: 8 }}>{card.title}</div>
-          <div style={{ fontSize: 13.5, color: "#5c7490", lineHeight: 1.6 }}>{card.text}</div>
-        </div>
-      ))}
-    </div>
-  </section>
-);
+  return (
+    <section id="about" style={{ background: "#f0f4f9", padding: "72px 80px" }}>
+      <div style={{
+        display: "inline-block", border: "1px solid #c8d4e3",
+        borderRadius: 20, padding: "3px 12px",
+        fontSize: 11, color: "#4a6080", letterSpacing: "0.5px", marginBottom: 20,
+        background: "#fff", fontWeight: 600, textTransform: "uppercase",
+      }}>
+        About TB
+      </div>
+      <h2 style={{ fontSize: 36, fontWeight: 800, color: "#0f2647", margin: "0 0 10px", letterSpacing: "-0.5px" }}>
+        What is tuberculosis?
+      </h2>
+      <p style={{ fontSize: 15, color: "#5c7490", marginBottom: 36 }}>
+        Understanding TB is the first step toward prevention and treatment.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+        {aboutCards.map((card) => {
+          const isActive = card.title === activeTitle;
+          return (
+            <div
+              key={card.title}
+              onClick={() => setActiveTitle(card.title)}
+              style={{
+                background: "#fff",
+                border: `1.5px solid ${isActive ? card.border : "#e2eaf3"}`,
+                borderRadius: 14, padding: "24px 22px",
+                boxShadow: isActive ? "0 0 0 2px rgba(59,111,212,0.08)" : "none",
+                cursor: "pointer",
+              }}
+            >
+              <div style={{
+                width: 44, height: 44, borderRadius: 10,
+                background: card.bg, display: "flex", alignItems: "center", justifyContent: "center",
+                marginBottom: 16,
+              }}>
+                {card.icon}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: "#0f2647", marginBottom: 8 }}>{card.title}</div>
+              <div style={{ fontSize: 13.5, color: "#5c7490", lineHeight: 1.6 }}>{card.text}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
 
 // ── Symptoms ───────────────────────────────────────────────────────────────
 const symptoms = [
@@ -353,7 +358,10 @@ const dotsSteps = [
   { step: "06", title: "Reporting", text: "Outcomes reported monthly to the municipal health office." },
 ];
 
-const DotsSection = () => (
+const DotsSection = () => {
+  const [activeStep, setActiveStep] = useState("01");
+
+  return (
   <section id="dots" style={{ background: "#fff", padding: "72px 80px" }}>
     <div style={{
       display: "inline-block", border: "1px solid #c8d4e3",
@@ -371,25 +379,39 @@ const DotsSection = () => (
     </p>
 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 14 }}>
-      {dotsSteps.map((s) => (
-        <div key={s.step} style={{
-          border: "1.5px solid #dce6f0",
-          borderRadius: 12, padding: "20px 18px",
-          background: "#f8fafd",
-        }}>
-          <div style={{ fontSize: 10, color: "#7a9cbf", fontWeight: 700, letterSpacing: "1px", marginBottom: 10 }}>
-            STEP {s.step}
+      {dotsSteps.map((s) => {
+        const isActive = s.step === activeStep;
+        return (
+          <div
+            key={s.step}
+            onClick={() => setActiveStep(s.step)}
+            style={{
+              border: isActive ? "1.5px solid #3b6fd4" : "1.5px solid #dce6f0",
+              borderRadius: 12, padding: "20px 18px",
+              background: isActive ? "#eef3ff" : "#f8fafd",
+              boxShadow: isActive ? "0 0 0 2px rgba(59,111,212,0.08)" : "none",
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ fontSize: 10, color: "#7a9cbf", fontWeight: 700, letterSpacing: "1px", marginBottom: 10 }}>
+              STEP {s.step}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 14.5, color: "#0f2647", marginBottom: 8 }}>{s.title}</div>
+            <div style={{ fontSize: 12.5, color: "#5c7490", lineHeight: 1.6 }}>{s.text}</div>
           </div>
-          <div style={{ fontWeight: 700, fontSize: 14.5, color: "#0f2647", marginBottom: 8 }}>{s.title}</div>
-          <div style={{ fontSize: 12.5, color: "#5c7490", lineHeight: 1.6 }}>{s.text}</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   </section>
-);
+  );
+};
 
 // ── Footer ─────────────────────────────────────────────────────────────────
-const Footer = () => (
+const Footer = () => {
+  const scrollTo = (id) =>
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+
+  return (
   <footer id="resources" style={{
     background: "linear-gradient(135deg, #0f2647 0%, #1a3a6b 100%)",
     padding: "56px 80px 24px",
@@ -409,21 +431,50 @@ const Footer = () => (
         <div style={{ fontSize: 11, fontWeight: 700, color: "#e9b84a", letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: 16 }}>
           TB Resources
         </div>
-        {["About tuberculosis", "DOTS program", "TB hotline: 1800-1888-0090"].map((link) => (
-          <div key={link} style={{ fontSize: 13.5, color: "rgba(255,255,255,0.65)", marginBottom: 10, cursor: "pointer" }}>
-            {link}
-          </div>
-        ))}
+        {[
+          { label: "About tuberculosis", onClick: () => scrollTo("about") },
+          { label: "DOTS program", onClick: () => scrollTo("dots") },
+          { label: "TB hotline: 1800-1888-0090", href: "tel:18001888090" },
+        ].map((link) =>
+          link.href ? (
+            <a
+              key={link.label}
+              href={link.href}
+              style={{ display: "block", fontSize: 13.5, color: "rgba(255,255,255,0.65)", marginBottom: 10, cursor: "pointer", textDecoration: "none" }}
+            >
+              {link.label}
+            </a>
+          ) : (
+            <div
+              key={link.label}
+              onClick={link.onClick}
+              style={{ fontSize: 13.5, color: "rgba(255,255,255,0.65)", marginBottom: 10, cursor: "pointer" }}
+            >
+              {link.label}
+            </div>
+          ),
+        )}
       </div>
 
       <div>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#e9b84a", letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: 16 }}>
           References
         </div>
-        {["DOH NTP guidelines", "WHO TB report 2023", "PhilHealth TB benefit", "Contact the NTP"].map((link) => (
-          <div key={link} style={{ fontSize: 13.5, color: "rgba(255,255,255,0.65)", marginBottom: 10, cursor: "pointer" }}>
-            {link}
-          </div>
+        {[
+          { label: "DOH NTP guidelines", href: "https://ntp.doh.gov.ph/resources/downloads/publications/guidelines/" },
+          { label: "WHO TB report 2023", href: "https://www.who.int/teams/global-programme-on-tuberculosis-and-lung-health/tb-reports" },
+          { label: "PhilHealth TB benefit", href: "https://www.philhealth.gov.ph/news/up/article/2024/news_6731aabf922b2.php" },
+          { label: "Contact the NTP", href: "https://ntp.doh.gov.ph/resources/downloads/publications/guidelines/" },
+        ].map((link) => (
+          <a
+            key={link.label}
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: "block", fontSize: 13.5, color: "rgba(255,255,255,0.65)", marginBottom: 10, cursor: "pointer", textDecoration: "none" }}
+          >
+            {link.label}
+          </a>
         ))}
       </div>
     </div>
@@ -437,23 +488,35 @@ const Footer = () => (
         © 2025 RespiraTrack · Department of Health — Republic of the Philippines
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        {["DOH", "WHO", "PhilHealth"].map((org) => (
-          <div key={org} style={{
-            border: "1px solid rgba(255,255,255,0.25)",
-            borderRadius: 6, padding: "4px 12px",
-            fontSize: 12, color: "rgba(255,255,255,0.6)", cursor: "pointer",
-          }}>
-            {org}
-          </div>
+        {[
+          { label: "DOH", href: "https://ntp.doh.gov.ph/resources/downloads/publications/guidelines/" },
+          { label: "WHO", href: "https://www.who.int/teams/global-programme-on-tuberculosis-and-lung-health/tb-reports" },
+          { label: "PhilHealth", href: "https://www.philhealth.gov.ph/news/up/article/2024/news_6731aabf922b2.php" },
+        ].map((org) => (
+          <a
+            key={org.label}
+            href={org.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 6, padding: "4px 12px",
+              fontSize: 12, color: "rgba(255,255,255,0.6)", cursor: "pointer",
+              textDecoration: "none",
+            }}
+          >
+            {org.label}
+          </a>
         ))}
       </div>
     </div>
   </footer>
-);
+  );
+};
 
 // ── Main ───────────────────────────────────────────────────────────────────
 const LandingPage = () => (
-  <div style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
+  <div>
     <Navbar />
     <div style={{ paddingTop: 60 }}>
       <Hero />

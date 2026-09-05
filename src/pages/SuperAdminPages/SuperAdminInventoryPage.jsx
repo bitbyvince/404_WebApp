@@ -5,9 +5,9 @@ import { exportInventoryReportPdf } from "../../services/report.service.js";
 
 const stockBadge = (status) => {
   if (status === "OK") return "bg-green-100 text-green-700";
-  if (status === "LOW") return "bg-yellow-100 text-yellow-700";
-  if (status === "CRITICAL") return "bg-orange-100 text-orange-700";
-  if (status === "STOCKOUT") return "bg-red-100 text-red-700";
+  if (status === "Low") return "bg-yellow-100 text-yellow-700";
+  if (status === "Critical") return "bg-orange-100 text-orange-700";
+  if (status === "Stockout") return "bg-red-100 text-red-700";
   return "bg-gray-100 text-gray-700";
 };
 
@@ -158,9 +158,9 @@ const InventoryPanel = () => {
         >
           <option value="">All Statuses</option>
           <option value="OK">OK</option>
-          <option value="LOW">Low</option>
-          <option value="CRITICAL">Critical</option>
-          <option value="STOCKOUT">Stockout</option>
+          <option value="Low">Low</option>
+          <option value="Critical">Critical</option>
+          <option value="Stockout">Stockout</option>
         </select>
 
         <input

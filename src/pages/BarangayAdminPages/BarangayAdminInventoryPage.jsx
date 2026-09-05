@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchInventory } from "../../services/inventory.service.js";
+import { exportInventoryReportPdf } from "../../services/report.service.js";
 import AddMedicineModal from "../AddMedicineModal.jsx";
 
 const stockBadge = (status) => {
   if (status === "OK")       return "bg-green-100 text-green-700";
-  if (status === "LOW")      return "bg-yellow-100 text-yellow-700";
-  if (status === "CRITICAL") return "bg-orange-100 text-orange-700";
-  if (status === "STOCKOUT") return "bg-red-100 text-red-700";
+  if (status === "Low")      return "bg-yellow-100 text-yellow-700";
+  if (status === "Critical") return "bg-orange-100 text-orange-700";
+  if (status === "Stockout") return "bg-red-100 text-red-700";
   return "bg-gray-100 text-gray-700";
 };
 
@@ -24,6 +25,7 @@ const MedicineInventoryPanel = () => {
   const [page, setPage]               = useState(1);
   const [total, setTotal]             = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const limit = 20;
 
   const admin       = JSON.parse(localStorage.getItem('admin') || '{}');
@@ -60,6 +62,26 @@ const MedicineInventoryPanel = () => {
 
   const totalPages = Math.ceil(total / limit);
 
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      const blob = await exportInventoryReportPdf({ barangay_id });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inventory_report_${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export inventory PDF:', err);
+      alert('Failed to export PDF. Please try again.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <div className="animate-in fade-in duration-500">
 
@@ -74,10 +96,14 @@ const MedicineInventoryPanel = () => {
             onClick={() => setShowAddModal(true)}
             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition"
           >
-            + Add Medicine
+            + Restock Medicine
           </button>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
-            ⬇ Export Stock Report
+          <button
+            onClick={handleExportPdf}
+            disabled={exportingPdf}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition disabled:opacity-60"
+          >
+            {exportingPdf ? 'Exporting...' : '⬇ Export Stock Report'}
           </button>
         </div>
       </div>
@@ -91,9 +117,9 @@ const MedicineInventoryPanel = () => {
         >
           <option value="">All Statuses</option>
           <option value="OK">OK</option>
-          <option value="LOW">Low</option>
-          <option value="CRITICAL">Critical</option>
-          <option value="STOCKOUT">Stockout</option>
+          <option value="Low">Low</option>
+          <option value="Critical">Critical</option>
+          <option value="Stockout">Stockout</option>
         </select>
 
         <input

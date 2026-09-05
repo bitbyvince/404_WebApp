@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "../../components/Layout";
+import { fetchMissedDoseAlerts } from "../../services/alert.service.js";
 
 import DashboardPanel            from "./BarangayAdminDashboard";
 import PatientsPanel             from "./BarangayAdminPatientsPage";
 import AddPatientPanel           from "./BarangayAdminAddPatientsPage";
+import AppointmentsPanel         from "./BarangayAdminAppointmentsPage";
 import ComplianceMonitoringPanel from "./BarangayAdminCompliancePage";
 import MedicineInventoryPanel    from "./BarangayAdminInventoryPage";
 import ReportsPanel              from "./BarangayAdminReportsPage";
@@ -16,12 +18,39 @@ const BarangayAdminPage = () => {
 
   const admin        = JSON.parse(localStorage.getItem("admin") || "{}");
   const barangayName = admin?.barangay_name || "Barangay Admin";
+  const [missedDoseAlertCount, setMissedDoseAlertCount] = useState(0);
+
+  const loadMissedDoseAlertCount = async () => {
+    try {
+      const data = await fetchMissedDoseAlerts();
+      if (data.success) {
+        const active = (data.data?.alerts || []).filter((a) => a.status !== "Resolved");
+        setMissedDoseAlertCount(active.length);
+      }
+    } catch (err) {
+      console.error("Failed to load missed dose alert count:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadMissedDoseAlertCount();
+    const interval = setInterval(loadMissedDoseAlertCount, 60000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") loadMissedDoseAlertCount();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   const menuItems = [
     { name: "Dashboard" },
     { name: "Patients" },
     { name: "Add Patient" },
-    { name: "Compliance Monitoring" },
+    { name: "Appointments" },
+    { name: "Compliance Monitoring", badge: missedDoseAlertCount },
     { name: "Medicine Inventory" },
     { name: "Medicine Dispensing" },
     { name: "Reports" },
@@ -34,6 +63,7 @@ const BarangayAdminPage = () => {
       case "Dashboard":             return <DashboardPanel />;
       case "Patients":              return <PatientsPanel />;
       case "Add Patient":           return <AddPatientPanel />;
+      case "Appointments":          return <AppointmentsPanel />;
       case "Compliance Monitoring": return <ComplianceMonitoringPanel />;
       case "Medicine Inventory":    return <MedicineInventoryPanel />;
       case "Reports":               return <ReportsPanel />;

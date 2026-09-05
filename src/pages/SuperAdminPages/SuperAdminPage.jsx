@@ -4,11 +4,13 @@ import Layout from "../../components/Layout";
 import DashboardPanel from "./SuperAdminDashboard";
 import BarangaysPanel from "./SuperAdminBarangayPage";
 import PatientsPanel from "./SuperAdminPatientsPage";
+import AppointmentsPanel from "./SuperAdminAppointmentsPage";
 import CompliancePanel from "./SuperAdminCompliancePage";
 import InventoryPanel from "./SuperAdminInventoryPage";
 import ReportsPanel from "./SuperAdminReportsPage";
 import HeatMapPanel from "./SuperAdminHeatMap";
-import { fetchStockRequestAlerts } from "../../services/alert.service.js";
+import { fetchStockRequestAlerts, fetchMissedDoseAlerts } from "../../services/alert.service.js";
+import MedicineDispensingPanel from "../BarangayAdminPages/MedicineDispensing";
 
 const SuperAdminPage = () => {
   const location = useLocation();
@@ -18,6 +20,7 @@ const SuperAdminPage = () => {
       || "Dashboard";
   });
   const [stockRequestCount, setStockRequestCount] = useState(0);
+  const [missedDoseAlertCount, setMissedDoseAlertCount] = useState(0);
 
   useEffect(() => {
     sessionStorage.setItem('superAdminActivePanel', active);
@@ -41,13 +44,30 @@ const SuperAdminPage = () => {
     }
   };
 
+  const loadMissedDoseAlertCount = async () => {
+    try {
+      const data = await fetchMissedDoseAlerts();
+      if (data.success) {
+        const active = (data.data?.alerts || []).filter((a) => a.status !== 'Resolved');
+        setMissedDoseAlertCount(active.length);
+      }
+    } catch (err) {
+      console.error('Failed to load missed dose alert count:', err);
+    }
+  };
+
   useEffect(() => {
     loadStockRequestCount();
-    const interval = setInterval(loadStockRequestCount, 60000);
+    loadMissedDoseAlertCount();
+    const interval = setInterval(() => {
+      loadStockRequestCount();
+      loadMissedDoseAlertCount();
+    }, 60000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadStockRequestCount();
+        loadMissedDoseAlertCount();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -62,8 +82,10 @@ const SuperAdminPage = () => {
     "Dashboard",
     { name: "Barangays", badge: stockRequestCount },
     "Patients",
-    "Compliance Monitoring",
+    "Appointments",
+    { name: "Compliance Monitoring", badge: missedDoseAlertCount },
     "Medicine Inventory",
+    "Medicine Dispensing",
     "Reports",
     "Heat Map",
   ];
@@ -73,8 +95,10 @@ const SuperAdminPage = () => {
       case "Dashboard":             return <DashboardPanel />;
       case "Barangays":             return <BarangaysPanel />;
       case "Patients":              return <PatientsPanel />;
+      case "Appointments":          return <AppointmentsPanel />;
       case "Compliance Monitoring": return <CompliancePanel />;
       case "Medicine Inventory":    return <InventoryPanel />;
+      case "Medicine Dispensing": return <MedicineDispensingPanel />;
       case "Reports":               return <ReportsPanel />;
       case "Heat Map":              return <HeatMapPanel />;
       default:                      return <DashboardPanel />;

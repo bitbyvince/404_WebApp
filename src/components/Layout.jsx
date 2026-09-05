@@ -8,6 +8,8 @@ const Layout = ({ children, menuItems = [], activeMenu, setActiveMenu, title, su
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('admin');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('barangay_id');
     navigate("/");
   };
 

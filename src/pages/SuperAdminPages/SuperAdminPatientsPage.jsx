@@ -199,9 +199,6 @@ const PatientsPanel = () => {
   };
 
   const handleSubmit = async (e) => {
-    const token = localStorage.getItem('token');
-console.log('Token being sent:', token);
-
     e.preventDefault();
     setFormLoading(true);
     setFormError('');

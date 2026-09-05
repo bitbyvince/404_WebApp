@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchPatients } from "../../services/patient.service.js";
 import { fetchBarangays } from "../../services/barangay.service.js";
+import { fetchMissedDoseAlerts, acknowledgeAlert, resolveAlert, sendFollowUpNotification } from "../../services/alert.service.js";
 
 const badge = (type) => {
   if (type === "Compliant") return "bg-green-100 text-green-700";
@@ -22,6 +23,82 @@ const CompliancePanel = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const limit = 20;
+
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [actioningAlertId, setActioningAlertId] = useState(null);
+  const [followUpAlert, setFollowUpAlert] = useState(null);
+  const [followUpMessage, setFollowUpMessage] = useState('');
+  const [sendingFollowUp, setSendingFollowUp] = useState(false);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const data = await fetchMissedDoseAlerts();
+      if (data.success) {
+        setAlerts((data.data?.alerts || []).filter(a => a.status !== 'Resolved'));
+      }
+    } catch (err) {
+      console.error('Failed to load missed dose alerts:', err);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAlerts();
+    const interval = setInterval(loadAlerts, 60000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadAlerts();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadAlerts]);
+
+  const handleAcknowledge = async (alertId) => {
+    setActioningAlertId(alertId);
+    try {
+      const data = await acknowledgeAlert(alertId);
+      if (data.success) loadAlerts();
+      else alert(data.message || 'Failed to acknowledge alert.');
+    } catch {
+      alert('Connection error.');
+    } finally {
+      setActioningAlertId(null);
+    }
+  };
+
+  const handleResolve = async (alertId) => {
+    setActioningAlertId(alertId);
+    try {
+      const data = await resolveAlert(alertId);
+      if (data.success) loadAlerts();
+      else alert(data.message || 'Failed to resolve alert.');
+    } catch {
+      alert('Connection error.');
+    } finally {
+      setActioningAlertId(null);
+    }
+  };
+
+  const submitFollowUp = async () => {
+    setSendingFollowUp(true);
+    try {
+      const data = await sendFollowUpNotification(followUpAlert.alert_id, followUpMessage);
+      if (data.success) {
+        setFollowUpAlert(null);
+        setFollowUpMessage('');
+      } else {
+        alert(data.message || 'Failed to send follow-up notification.');
+      }
+    } catch {
+      alert('Connection error.');
+    } finally {
+      setSendingFollowUp(false);
+    }
+  };
 
   const loadPatients = useCallback(async (activeFilters = {}, currentPage = 1) => {
     setLoading(true);
@@ -80,6 +157,60 @@ const CompliancePanel = () => {
     <div className="animate-in fade-in duration-500">
       <h2 className="text-2xl font-semibold mb-2 text-gray-800">Compliance Monitoring</h2>
       <p className="text-sm text-zinc-500 mb-4">Track patient adherence across all barangays</p>
+
+      {/* Missed Dose Alerts */}
+      {!alertsLoading && alerts.length > 0 && (
+        <div className="bg-orange-50 rounded-xl border border-orange-200 mb-6 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-orange-200 flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <p className="text-xs font-bold text-orange-800 uppercase tracking-wide">Missed Dose Alerts</p>
+            <span className="ml-auto text-xs text-orange-600">{alerts.length}</span>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-orange-100">
+                {alerts.map((a) => (
+                  <tr key={a.alert_id} className="hover:bg-orange-100/50 transition-colors">
+                    <td className="p-3 pl-4 whitespace-nowrap">
+                      <p className="font-semibold text-orange-900">{a.patient_name || a.tb_case_number}</p>
+                    </td>
+                    <td className="p-3 text-orange-700">{a.message}</td>
+                    <td className="p-3 text-xs text-orange-600 whitespace-nowrap">
+                      {a.status} · {new Date(a.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                    </td>
+                    <td className="p-3 pr-4 whitespace-nowrap">
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => { setFollowUpAlert(a); setFollowUpMessage(''); }}
+                          className="px-3 py-1 text-xs font-semibold text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition"
+                        >
+                          Send Follow-up
+                        </button>
+                        {a.status === "Active" && (
+                          <button
+                            onClick={() => handleAcknowledge(a.alert_id)}
+                            disabled={actioningAlertId === a.alert_id}
+                            className="px-3 py-1 text-xs font-semibold text-orange-700 bg-white border border-orange-200 rounded-lg hover:bg-orange-100 transition disabled:opacity-50"
+                          >
+                            Acknowledge
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleResolve(a.alert_id)}
+                          disabled={actioningAlertId === a.alert_id}
+                          className="px-3 py-1 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 transition disabled:opacity-50"
+                        >
+                          Resolve
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow mt-6 mb-4 flex gap-3 flex-wrap">
@@ -181,6 +312,37 @@ const CompliancePanel = () => {
           </div>
         )}
       </div>
+
+      {/* Send Follow-up Modal */}
+      {followUpAlert && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-800">Send Follow-up</h2>
+              <button onClick={() => setFollowUpAlert(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">{followUpAlert.message}</p>
+            <textarea
+              value={followUpMessage}
+              onChange={(e) => setFollowUpMessage(e.target.value)}
+              placeholder="Hi, we noticed you've missed some medication doses. Please reach out to your health center or take your next dose as soon as possible."
+              rows={4}
+              maxLength={500}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-orange-400/30 mb-4"
+            />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setFollowUpAlert(null)} className="px-4 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+              <button
+                onClick={submitFollowUp}
+                disabled={sendingFollowUp}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700 transition disabled:opacity-50"
+              >
+                {sendingFollowUp ? 'Sending...' : 'Send Notification'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

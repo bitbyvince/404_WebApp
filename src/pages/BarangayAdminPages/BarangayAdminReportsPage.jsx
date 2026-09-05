@@ -13,6 +13,7 @@ const ReportsPanel = () => {
   const [trendData, setTrendData] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
+  const [exportingReport, setExportingReport] = useState(null);
 
   const admin       = JSON.parse(localStorage.getItem('admin') || '{}');
   const barangay_id = admin.barangay_id;
@@ -43,6 +44,31 @@ const ReportsPanel = () => {
 
   const summary  = report?.patient_summary || {};
   const patients = report?.patients || [];
+
+  const downloadReportPdf = async (endpoint, filename, key) => {
+    setExportingReport(key);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/reports/${endpoint}?barangay_id=${barangay_id}&format=pdf`,
+        { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
+      );
+      if (!res.ok) throw new Error(`Export failed with status ${res.status}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(`Failed to export ${key} report:`, err);
+      alert('Failed to export report. Please try again.');
+    } finally {
+      setExportingReport(null);
+    }
+  };
 
   const lineData = trendData.map(t => ({
     month: t.period || t.snapshot_date?.slice(0, 7) || '—',
@@ -143,22 +169,25 @@ const ReportsPanel = () => {
         <h3 className="text-lg font-semibold text-gray-700 mb-4">Export Reports</h3>
         <div className="flex gap-3 flex-wrap">
           <button
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL}/api/reports/barangay?barangay_id=${barangay_id}&format=pdf`, '_blank')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
+            onClick={() => downloadReportPdf('barangay', `compliance_report_${Date.now()}.pdf`, 'compliance')}
+            disabled={exportingReport === 'compliance'}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
           >
-            Compliance Report
+            {exportingReport === 'compliance' ? 'Exporting...' : 'Compliance Report'}
           </button>
           <button
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL}/api/reports/inventory?barangay_id=${barangay_id}&format=pdf`, '_blank')}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm"
+            onClick={() => downloadReportPdf('inventory', `inventory_report_${Date.now()}.pdf`, 'inventory')}
+            disabled={exportingReport === 'inventory'}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
           >
-            Inventory Report
+            {exportingReport === 'inventory' ? 'Exporting...' : 'Inventory Report'}
           </button>
           <button
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL}/api/reports/treatment-outcomes?barangay_id=${barangay_id}&format=pdf`, '_blank')}
-            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm"
+            onClick={() => downloadReportPdf('treatment-outcomes', `defaulter_list_${Date.now()}.pdf`, 'outcomes')}
+            disabled={exportingReport === 'outcomes'}
+            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
           >
-            Defaulter List
+            {exportingReport === 'outcomes' ? 'Exporting...' : 'Defaulter List'}
           </button>
         </div>
       </div>

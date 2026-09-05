@@ -10,6 +10,23 @@ export const fetchStockRequestAlerts = async () => {
   return res.json();
 };
 
+export const fetchMissedDoseAlerts = async () => {
+  const res = await authFetch(`${BASE_URL}/api/alerts?alert_type=${encodeURIComponent('Missed Dose')}&limit=50`, {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  return res.json();
+};
+
+export const sendFollowUpNotification = async (alertId, message = '') => {
+  const res = await authFetch(`${BASE_URL}/api/alerts/${alertId}/follow-up`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  return res.json();
+};
+
 export const acknowledgeAlert = async (alertId) => {
   const res = await authFetch(`${BASE_URL}/api/alerts/${alertId}/acknowledge`, { method: 'PATCH' });
   return res.json();

@@ -26,9 +26,6 @@ const DashboardPanel = () => {
           fetchComplianceTrend({ period: 'monthly', limit: 7 }),
         ]);
 
-        console.log('Barangay report:', JSON.stringify(reportData));
-        console.log('Trend data:', JSON.stringify(trendData));
-
         if (reportData.success) setReport(reportData.data);
         if (trendData.success) setTrend(trendData.data || []);
       } catch (err) {

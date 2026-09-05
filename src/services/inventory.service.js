@@ -31,19 +31,3 @@ export const restockInventoryItem = async (inventoryId, { quantity_added, notes 
   });
   return res.json();
 };
-
-export const exportInventoryPdf = async ({ barangay_id } = {}) => {
-  const params = new URLSearchParams();
-  if (barangay_id) params.set('barangay_id', barangay_id);
-
-  const res = await fetch(`${BASE_URL}/api/inventory/export/pdf?${params}`, {
-    headers: { 'Authorization': `Bearer ${getToken()}` },
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(errText || `Export failed with status ${res.status}`);
-  }
-
-  return res.blob();
-};
