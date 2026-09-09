@@ -50,7 +50,7 @@ const PatientsPanel = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState({ barangay_id: '', risk_level: '', treatment_phase: '' });
+  const [filters, setFilters] = useState({ barangay_id: '', risk_level: '', treatment_phase: '', sex: '', min_age: '', max_age: '', from: '', to: '' });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const limit = 20;
@@ -87,6 +87,11 @@ const PatientsPanel = () => {
         barangay_id: filters.barangay_id || undefined,
         risk_level: filters.risk_level || undefined,
         treatment_phase: filters.treatment_phase || undefined,
+        sex: filters.sex || undefined,
+        min_age: filters.min_age || undefined,
+        max_age: filters.max_age || undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -166,7 +171,7 @@ const PatientsPanel = () => {
 
   const clearFilters = () => {
     setSearch('');
-    setFilters({ barangay_id: '', risk_level: '', treatment_phase: '' });
+    setFilters({ barangay_id: '', risk_level: '', treatment_phase: '', sex: '', min_age: '', max_age: '', from: '', to: '' });
     setPage(1);
   };
 
@@ -175,7 +180,20 @@ const PatientsPanel = () => {
   };
 
   const handlePatientTypeChange = (field, value) => {
-    setForm(prev => ({ ...prev, patient_type: { ...prev.patient_type, [field]: value } }));
+    setForm(prev => {
+      const patientType = { ...prev.patient_type, [field]: value };
+      // "New" and "Retreatment" are mutually exclusive — a patient can't be both.
+      if (value && field === 'is_new') patientType.is_retreatment = false;
+      if (value && field === 'is_retreatment') patientType.is_new = false;
+
+      const next = { ...prev, patient_type: patientType };
+      if (value && (field === 'is_new' || field === 'is_retreatment')) {
+        const updatedRegimen = [...prev.drug_regimen];
+        updatedRegimen[0] = { ...updatedRegimen[0], drug_name: field === 'is_new' ? 'HRZE' : 'HR' };
+        next.drug_regimen = updatedRegimen;
+      }
+      return next;
+    });
   };
 
   const handleDrugChange = (index, field, value) => {
@@ -256,7 +274,8 @@ const PatientsPanel = () => {
   };
 
   const totalPages = Math.ceil(total / limit);
-  const hasActiveFilters = search || filters.barangay_id || filters.risk_level || filters.treatment_phase;
+  const hasActiveFilters = search || filters.barangay_id || filters.risk_level || filters.treatment_phase ||
+    filters.sex || filters.min_age || filters.max_age || filters.from || filters.to;
   const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
   const labelClass = "text-xs text-zinc-600 font-medium";
 
@@ -309,6 +328,19 @@ const PatientsPanel = () => {
             <option value="Intensive">Intensive</option>
             <option value="Continuation">Continuation</option>
           </select>
+          <select value={filters.sex} onChange={(e) => handleFilterChange('sex', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none">
+            <option value="">All Sexes</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+          <input type="number" min={0} placeholder="Min Age" value={filters.min_age} onChange={(e) => handleFilterChange('min_age', e.target.value)} className="w-24 border rounded-lg px-3 py-2 text-sm outline-none" />
+          <input type="number" min={0} placeholder="Max Age" value={filters.max_age} onChange={(e) => handleFilterChange('max_age', e.target.value)} className="w-24 border rounded-lg px-3 py-2 text-sm outline-none" />
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            Registered
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            to
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+          </label>
           {hasActiveFilters && (
             <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
               ✕ Clear Filters
@@ -550,13 +582,21 @@ const PatientsPanel = () => {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={labelClass}>Drug Name</label>
-                        <select className={inputClass} value={drug.drug_name} onChange={e => handleDrugChange(index, 'drug_name', e.target.value)} required>
+                        <select className={inputClass} value={['', 'HRZE', 'HR'].includes(drug.drug_name) ? drug.drug_name : 'Others'} onChange={e => handleDrugChange(index, 'drug_name', e.target.value)} required>
                           <option value="">Drug Name</option>
-                          <option value="Isoniazid">Isoniazid</option>
-                          <option value="Rifampicin">Rifampicin</option>
-                          <option value="Pyrazinamide">Pyrazinamide</option>
-                          <option value="Ethambutol">Ethambutol</option>
+                          <option value="HRZE">HRZE</option>
+                          <option value="HR">HR</option>
+                          <option value="Others">Others</option>
                         </select>
+                        {!['', 'HRZE', 'HR'].includes(drug.drug_name) && (
+                          <select className={`${inputClass} mt-2`} value={['Isoniazid', 'Rifampicin', 'Pyrazinamide', 'Ethambutol'].includes(drug.drug_name) ? drug.drug_name : ''} onChange={e => handleDrugChange(index, 'drug_name', e.target.value)} required>
+                            <option value="">Select medicine</option>
+                            <option value="Isoniazid">Isoniazid</option>
+                            <option value="Rifampicin">Rifampicin</option>
+                            <option value="Pyrazinamide">Pyrazinamide</option>
+                            <option value="Ethambutol">Ethambutol</option>
+                          </select>
+                        )}
                       </div>
                       <div><label className={labelClass}>Strength</label><input className={inputClass} placeholder="Strength" value={drug.strength} onChange={e => handleDrugChange(index, 'strength', e.target.value)} required /></div>
                       <div>

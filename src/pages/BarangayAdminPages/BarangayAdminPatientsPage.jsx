@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 // AFTER
-import { fetchPatients, fetchPatientById, resetPatientPin } from "../../services/patient.service.js";
+import { fetchPatients, fetchPatientById, resetPatientPin, exportPatientsPdf } from "../../services/patient.service.js";
 
 
 const badge = (type) => {
@@ -53,9 +53,10 @@ const PatientsPanel = () => {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [search, setSearch]     = useState('');
-  const [filters, setFilters]   = useState({ risk_level: '', treatment_phase: '' });
+  const [filters, setFilters]   = useState({ risk_level: '', treatment_phase: '', sex: '', min_age: '', max_age: '', from: '', to: '' });
   const [page, setPage]         = useState(1);
   const [total, setTotal]       = useState(0);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const limit = 20;
 
   const admin        = JSON.parse(localStorage.getItem('admin') || '{}');
@@ -100,12 +101,42 @@ const PatientsPanel = () => {
 
   const clearFilters = () => {
     setSearch('');
-    setFilters({ risk_level: '', treatment_phase: '' });
+    setFilters({ risk_level: '', treatment_phase: '', sex: '', min_age: '', max_age: '', from: '', to: '' });
     setPage(1);
   };
 
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      const blob = await exportPatientsPdf({
+        barangay_id,
+        risk_level: filters.risk_level || undefined,
+        treatment_phase: filters.treatment_phase || undefined,
+        sex: filters.sex || undefined,
+        min_age: filters.min_age || undefined,
+        max_age: filters.max_age || undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `patients_${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export patients PDF:', err);
+      alert('Failed to export PDF. Please try again.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / limit);
-  const hasActiveFilters = search || filters.risk_level || filters.treatment_phase;
+  const hasActiveFilters = search || filters.risk_level || filters.treatment_phase ||
+    filters.sex || filters.min_age || filters.max_age || filters.from || filters.to;
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -114,8 +145,12 @@ const PatientsPanel = () => {
           <h2 className="text-2xl font-semibold text-gray-800">Patients</h2>
           <p className="text-sm text-gray-500">Manage your barangay patients</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
-          ⬇ Export PDF
+        <button
+          onClick={handleExportPdf}
+          disabled={exportingPdf}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:bg-blue-300"
+        >
+          {exportingPdf ? 'Exporting...' : '⬇ Export PDF'}
         </button>
       </div>
 
@@ -148,6 +183,23 @@ const PatientsPanel = () => {
             <option value="Intensive">Intensive</option>
             <option value="Continuation">Continuation</option>
           </select>
+          <select
+            value={filters.sex}
+            onChange={(e) => handleFilterChange('sex', e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm outline-none"
+          >
+            <option value="">All Sexes</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+          <input type="number" min={0} placeholder="Min Age" value={filters.min_age} onChange={(e) => handleFilterChange('min_age', e.target.value)} className="w-24 border rounded-lg px-3 py-2 text-sm outline-none" />
+          <input type="number" min={0} placeholder="Max Age" value={filters.max_age} onChange={(e) => handleFilterChange('max_age', e.target.value)} className="w-24 border rounded-lg px-3 py-2 text-sm outline-none" />
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            Registered
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            to
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+          </label>
           {hasActiveFilters && (
             <button
               onClick={clearFilters}

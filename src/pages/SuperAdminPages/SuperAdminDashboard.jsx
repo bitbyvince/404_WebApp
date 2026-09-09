@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { fetchCityReport, fetchComplianceTrend } from "../../services/report.service.js";
 import { fetchInventory } from "../../services/inventory.service.js";
+import { fetchBarangays } from "../../services/barangay.service.js";
 
 const COLORS = ["#22c55e", "#eab308", "#ef4444"];
 
@@ -14,6 +15,20 @@ const DashboardPanel = () => {
   const [totalStock, setTotalStock] = useState(0);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState("");
+  const [barangayOptions, setBarangayOptions] = useState([]);
+  const [filters, setFilters] = useState({ barangay_id: '', from: '', to: '' });
+
+  useEffect(() => {
+    const loadBarangays = async () => {
+      try {
+        const data = await fetchBarangays();
+        if (data.success) setBarangayOptions(data.barangays || []);
+      } catch (err) {
+        console.error('Failed to fetch barangays:', err);
+      }
+    };
+    loadBarangays();
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -21,9 +36,9 @@ const DashboardPanel = () => {
       setError("");
       try {
         const [cityRes, trendRes, inventoryRes] = await Promise.all([
-          fetchCityReport(),
-          fetchComplianceTrend({ period: "monthly", limit: 7 }),
-          fetchInventory({ limit: 100 }),
+          fetchCityReport({ from: filters.from || undefined, to: filters.to || undefined }),
+          fetchComplianceTrend({ barangay_id: filters.barangay_id || undefined, period: "monthly", limit: 7, from: filters.from || undefined, to: filters.to || undefined }),
+          fetchInventory({ limit: 100, barangay_id: filters.barangay_id || undefined }),
         ]);
         if (cityRes.success)      setCityReport(cityRes.data);
         if (trendRes.success)     setTrendData(Array.isArray(trendRes.data) ? trendRes.data : []);
@@ -42,11 +57,26 @@ const DashboardPanel = () => {
       }
     };
     load();
-  }, []);
+  }, [filters.barangay_id, filters.from, filters.to]);
 
-  const barangays      = cityReport?.barangay_breakdown || [];
-  const riskSummary    = cityReport?.risk_summary || {};
-  const totalPatients  = cityReport?.total_active_patients ?? 0;
+  const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  const clearFilters = () => setFilters({ barangay_id: '', from: '', to: '' });
+  const hasActiveFilters = filters.barangay_id || filters.from || filters.to;
+
+  const allBarangays   = cityReport?.barangay_breakdown || [];
+  const barangays = filters.barangay_id
+    ? allBarangays.filter(b => b.barangay_id === filters.barangay_id)
+    : allBarangays;
+  const riskSummary    = filters.barangay_id
+    ? barangays.reduce((acc, b) => ({
+        compliant: acc.compliant + (b.risk_summary?.compliant ?? 0),
+        at_risk: acc.at_risk + (b.risk_summary?.at_risk ?? 0),
+        defaulter: acc.defaulter + (b.risk_summary?.defaulter ?? 0),
+      }), { compliant: 0, at_risk: 0, defaulter: 0 })
+    : (cityReport?.risk_summary || {});
+  const totalPatients  = filters.barangay_id
+    ? barangays.reduce((s, b) => s + (b.total_active ?? 0), 0)
+    : (cityReport?.total_active_patients ?? 0);
   const totalBarangays = barangays.length;
 
   const overallCompliance = barangays.length
@@ -75,6 +105,27 @@ const DashboardPanel = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Municipal Dashboard</h1>
         <p className="text-gray-500">Overview of all barangay health centers</p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex gap-3 flex-wrap items-center">
+          <select value={filters.barangay_id} onChange={(e) => handleFilterChange('barangay_id', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none">
+            <option value="">All Barangays</option>
+            {barangayOptions.map((b) => <option key={b.barangay_id} value={b.barangay_id}>{b.name}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            From
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            to
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+          </label>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+              ✕ Clear Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (

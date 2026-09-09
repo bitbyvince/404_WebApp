@@ -17,6 +17,7 @@ const ReportsPanel = () => {
 
   const admin       = JSON.parse(localStorage.getItem('admin') || '{}');
   const barangay_id = admin.barangay_id;
+  const [filters, setFilters] = useState({ from: '', to: '' });
 
   useEffect(() => {
     const load = async () => {
@@ -24,8 +25,8 @@ const ReportsPanel = () => {
       setError('');
       try {
         const [reportRes, trendRes] = await Promise.all([
-          fetchBarangayReport({ barangay_id }),
-          fetchComplianceTrend({ barangay_id, period: 'monthly', limit: 7 }),
+          fetchBarangayReport({ barangay_id, from: filters.from || undefined, to: filters.to || undefined }),
+          fetchComplianceTrend({ barangay_id, period: 'monthly', limit: 7, from: filters.from || undefined, to: filters.to || undefined }),
         ]);
 
         if (reportRes.success) setReport(reportRes.data);
@@ -40,7 +41,11 @@ const ReportsPanel = () => {
       }
     };
     load();
-  }, [barangay_id]);
+  }, [barangay_id, filters.from, filters.to]);
+
+  const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  const clearFilters = () => setFilters({ from: '', to: '' });
+  const hasActiveFilters = filters.from || filters.to;
 
   const summary  = report?.patient_summary || {};
   const patients = report?.patients || [];
@@ -48,8 +53,11 @@ const ReportsPanel = () => {
   const downloadReportPdf = async (endpoint, filename, key) => {
     setExportingReport(key);
     try {
+      const params = new URLSearchParams({ barangay_id, format: 'pdf' });
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/reports/${endpoint}?barangay_id=${barangay_id}&format=pdf`,
+        `${import.meta.env.VITE_API_URL}/api/reports/${endpoint}?${params}`,
         { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
       );
       if (!res.ok) throw new Error(`Export failed with status ${res.status}`);
@@ -86,6 +94,23 @@ const ReportsPanel = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Reports</h1>
         <p className="text-gray-500">Barangay analytics and insights</p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border mb-6">
+        <div className="flex gap-3 flex-wrap items-center">
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            From
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            to
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+          </label>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+              ✕ Clear Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (

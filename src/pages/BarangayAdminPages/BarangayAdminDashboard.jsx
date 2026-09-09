@@ -16,14 +16,15 @@ const DashboardPanel = () => {
   const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [filters, setFilters] = useState({ from: '', to: '' });
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const [reportData, trendData] = await Promise.all([
-          fetchBarangayReport({ barangay_id: localStorage.getItem('barangay_id') }),
-          fetchComplianceTrend({ period: 'monthly', limit: 7 }),
+          fetchBarangayReport({ barangay_id: localStorage.getItem('barangay_id'), from: filters.from || undefined, to: filters.to || undefined }),
+          fetchComplianceTrend({ period: 'monthly', limit: 7, from: filters.from || undefined, to: filters.to || undefined }),
         ]);
 
         if (reportData.success) setReport(reportData.data);
@@ -36,7 +37,11 @@ const DashboardPanel = () => {
       }
     };
     load();
-  }, []);
+  }, [filters.from, filters.to]);
+
+  const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  const clearFilters = () => setFilters({ from: '', to: '' });
+  const hasActiveFilters = filters.from || filters.to;
 
   if (loading) return (
     <div className="animate-in fade-in duration-500 flex items-center justify-center h-64">
@@ -81,6 +86,23 @@ const DashboardPanel = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Dashboard</h1>
         <p className="text-gray-500">Overview of your barangay health center</p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex gap-3 flex-wrap items-center">
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            From
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            to
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+          </label>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+              ✕ Clear Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Top Metrics Grid */}

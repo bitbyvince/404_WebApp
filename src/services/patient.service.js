@@ -3,12 +3,17 @@ import { authFetch } from './auth.service';
 
 const BASE_URL = import.meta.env.VITE_API_URL;
 
-export const fetchPatients = async ({ search, barangay_id, risk_level, treatment_phase, page, limit }) => {
+export const fetchPatients = async ({ search, barangay_id, risk_level, treatment_phase, sex, min_age, max_age, from, to, page, limit }) => {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (barangay_id) params.set('barangay_id', barangay_id);
   if (risk_level) params.set('risk_level', risk_level);
   if (treatment_phase) params.set('treatment_phase', treatment_phase);
+  if (sex) params.set('sex', sex);
+  if (min_age !== undefined && min_age !== '') params.set('min_age', min_age);
+  if (max_age !== undefined && max_age !== '') params.set('max_age', max_age);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
   params.set('page', page);
   params.set('limit', limit);
 
@@ -47,12 +52,17 @@ export const fetchEscalatedPatients = async (escalation_level = 3, barangay_id =
   return res.json();
 };
 
-export const exportPatientsPdf = async ({ barangay_id, risk_level, treatment_phase, is_active } = {}) => {
+export const exportPatientsPdf = async ({ barangay_id, risk_level, treatment_phase, is_active, sex, min_age, max_age, from, to } = {}) => {
   const params = new URLSearchParams();
   if (barangay_id) params.set('barangay_id', barangay_id);
   if (risk_level) params.set('risk_level', risk_level);
   if (treatment_phase) params.set('treatment_phase', treatment_phase);
   if (is_active !== undefined) params.set('is_active', is_active);
+  if (sex) params.set('sex', sex);
+  if (min_age !== undefined && min_age !== '') params.set('min_age', min_age);
+  if (max_age !== undefined && max_age !== '') params.set('max_age', max_age);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
 
   const res = await fetch(`${BASE_URL}/api/patients/export/pdf?${params}`, {
     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },

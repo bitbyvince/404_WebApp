@@ -65,7 +65,20 @@ const AddPatientPanel = () => {
   const labelClass = "text-xs text-zinc-600 font-medium";
 
   const handleFormChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
-  const handlePatientTypeChange = (field, value) => setForm(prev => ({ ...prev, patient_type: { ...prev.patient_type, [field]: value } }));
+  const handlePatientTypeChange = (field, value) => setForm(prev => {
+    const patientType = { ...prev.patient_type, [field]: value };
+    // "New" and "Retreatment" are mutually exclusive — a patient can't be both.
+    if (value && field === 'is_new') patientType.is_retreatment = false;
+    if (value && field === 'is_retreatment') patientType.is_new = false;
+
+    const next = { ...prev, patient_type: patientType };
+    if (value && (field === 'is_new' || field === 'is_retreatment')) {
+      const updatedRegimen = [...prev.drug_regimen];
+      updatedRegimen[0] = { ...updatedRegimen[0], drug_name: field === 'is_new' ? 'HRZE' : 'HR' };
+      next.drug_regimen = updatedRegimen;
+    }
+    return next;
+  });
   const handleDrugChange = (index, field, value) => {
     const updated = [...form.drug_regimen];
     updated[index] = { ...updated[index], [field]: value };
@@ -293,13 +306,21 @@ const AddPatientPanel = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Drug Name</label>
-                  <select className={inputClass} value={drug.drug_name} onChange={e => handleDrugChange(index, 'drug_name', e.target.value)} required>
+                  <select className={inputClass} value={['', 'HRZE', 'HR'].includes(drug.drug_name) ? drug.drug_name : 'Others'} onChange={e => handleDrugChange(index, 'drug_name', e.target.value)} required>
                     <option value="">Drug Name</option>
-                    <option value="Isoniazid">Isoniazid</option>
-                    <option value="Rifampicin">Rifampicin</option>
-                    <option value="Pyrazinamide">Pyrazinamide</option>
-                    <option value="Ethambutol">Ethambutol</option>
+                    <option value="HRZE">HRZE</option>
+                    <option value="HR">HR</option>
+                    <option value="Others">Others</option>
                   </select>
+                  {!['', 'HRZE', 'HR'].includes(drug.drug_name) && (
+                    <select className={`${inputClass} mt-2`} value={['Isoniazid', 'Rifampicin', 'Pyrazinamide', 'Ethambutol'].includes(drug.drug_name) ? drug.drug_name : ''} onChange={e => handleDrugChange(index, 'drug_name', e.target.value)} required>
+                      <option value="">Select medicine</option>
+                      <option value="Isoniazid">Isoniazid</option>
+                      <option value="Rifampicin">Rifampicin</option>
+                      <option value="Pyrazinamide">Pyrazinamide</option>
+                      <option value="Ethambutol">Ethambutol</option>
+                    </select>
+                  )}
                 </div>
                 <div><label className={labelClass}>Strength</label><input className={inputClass} placeholder="Strength" value={drug.strength} onChange={e => handleDrugChange(index, 'strength', e.target.value)} required /></div>
                 <div>

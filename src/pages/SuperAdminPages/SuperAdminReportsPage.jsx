@@ -4,6 +4,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line
 } from "recharts";
 import { fetchCityReport, fetchComplianceTrend } from "../../services/report.service.js";
+import { fetchBarangays } from "../../services/barangay.service.js";
 
 const COLORS = ["#3b82f6", "#22c55e", "#ef4444", "#eab308", "#a855f7"];
 
@@ -12,6 +13,20 @@ const ReportsPanel = () => {
   const [trendData, setTrendData]   = useState([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
+  const [barangayOptions, setBarangayOptions] = useState([]);
+  const [filters, setFilters] = useState({ barangay_id: '', from: '', to: '' });
+
+  useEffect(() => {
+    const loadBarangays = async () => {
+      try {
+        const data = await fetchBarangays();
+        if (data.success) setBarangayOptions(data.barangays || []);
+      } catch (err) {
+        console.error('Failed to fetch barangays:', err);
+      }
+    };
+    loadBarangays();
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -19,8 +34,8 @@ const ReportsPanel = () => {
       setError('');
       try {
         const [cityData, trendRes] = await Promise.all([
-          fetchCityReport(),
-          fetchComplianceTrend({ period: 'monthly', limit: 7 }),
+          fetchCityReport({ from: filters.from || undefined, to: filters.to || undefined }),
+          fetchComplianceTrend({ barangay_id: filters.barangay_id || undefined, period: 'monthly', limit: 7, from: filters.from || undefined, to: filters.to || undefined }),
         ]);
         if (cityData.success) setCityReport(cityData.data);
         if (trendRes.success) setTrendData(trendRes.data || []);
@@ -32,10 +47,25 @@ const ReportsPanel = () => {
       }
     };
     load();
-  }, []);
+  }, [filters.barangay_id, filters.from, filters.to]);
 
-  const barangays   = cityReport?.barangay_breakdown || [];
-  const riskSummary = cityReport?.risk_summary || {};
+  const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  const clearFilters = () => setFilters({ barangay_id: '', from: '', to: '' });
+  const hasActiveFilters = filters.barangay_id || filters.from || filters.to;
+
+  // City report always covers every barangay — scope the on-page view down
+  // to the selected one client-side (the "Municipal" PDF export stays city-wide).
+  const allBarangays = cityReport?.barangay_breakdown || [];
+  const barangays = filters.barangay_id
+    ? allBarangays.filter(b => b.barangay_id === filters.barangay_id)
+    : allBarangays;
+  const riskSummary = filters.barangay_id
+    ? barangays.reduce((acc, b) => ({
+        compliant: acc.compliant + (b.risk_summary?.compliant ?? 0),
+        at_risk: acc.at_risk + (b.risk_summary?.at_risk ?? 0),
+        defaulter: acc.defaulter + (b.risk_summary?.defaulter ?? 0),
+      }), { compliant: 0, at_risk: 0, defaulter: 0 })
+    : (cityReport?.risk_summary || {});
 
   const summary = {
     overall_compliance_percentage: barangays.length
@@ -43,7 +73,9 @@ const ReportsPanel = () => {
       : 0,
     at_risk_count:   riskSummary.at_risk   ?? 0,
     defaulter_count: riskSummary.defaulter ?? 0,
-    total_patients:  cityReport?.total_active_patients ?? 0,
+    total_patients:  filters.barangay_id
+      ? barangays.reduce((s, b) => s + (b.total_active ?? 0), 0)
+      : (cityReport?.total_active_patients ?? 0),
   };
 
   const barData = barangays.map(b => ({
@@ -51,11 +83,13 @@ const ReportsPanel = () => {
     compliance: b.compliance_percentage ?? 0,
   }));
 
-  const stockData = (cityReport?.critical_stock_items || []).map((item, i) => ({
-    name: item.drug_name,
-    value: item.remaining_stock ?? 0,
-    color: COLORS[i % COLORS.length],
-  }));
+  const stockData = (cityReport?.critical_stock_items || [])
+    .filter(item => !filters.barangay_id || item.barangay_id === filters.barangay_id)
+    .map((item, i) => ({
+      name: item.drug_name,
+      value: item.remaining_stock ?? 0,
+      color: COLORS[i % COLORS.length],
+    }));
 
   const lineChartData = trendData.map(t => ({
     month: t.period || t.snapshot_date?.slice(0, 7),
@@ -64,10 +98,11 @@ const ReportsPanel = () => {
 
   const [exportingReport, setExportingReport] = useState(null); // 'city' | 'inventory' | 'outcomes' | null
 
-  const downloadReportPdf = async (endpoint, filename, key) => {
+  const downloadReportPdf = async (endpoint, filename, key, extraParams = {}) => {
     setExportingReport(key);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/reports/${endpoint}?format=pdf`, {
+      const params = new URLSearchParams({ format: 'pdf', ...extraParams });
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/reports/${endpoint}?${params}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
       });
       if (!res.ok) throw new Error(`Export failed with status ${res.status}`);
@@ -99,6 +134,28 @@ const ReportsPanel = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Reports</h1>
         <p className="text-gray-500">Comprehensive municipal analytics</p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex gap-3 flex-wrap items-center">
+          <select value={filters.barangay_id} onChange={(e) => handleFilterChange('barangay_id', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none">
+            <option value="">All Barangays</option>
+            {barangayOptions.map((b) => <option key={b.barangay_id} value={b.barangay_id}>{b.name}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            From
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            to
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+          </label>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+              ✕ Clear Filters
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-2">Date range scopes the compliance trend and PDF exports; barangay scopes the charts/table below and the Barangay Stock / Defaulter Summary exports.</p>
       </div>
 
       {error && (
@@ -207,21 +264,30 @@ const ReportsPanel = () => {
         <h3 className="text-lg font-semibold text-gray-700 mb-4">Export Reports</h3>
         <div className="flex gap-4 flex-wrap">
           <button
-            onClick={() => downloadReportPdf('city', `municipal_compliance_report_${Date.now()}.pdf`, 'city')}
+            onClick={() => downloadReportPdf('city', `municipal_compliance_report_${Date.now()}.pdf`, 'city', {
+              ...(filters.from && { from: filters.from }),
+              ...(filters.to && { to: filters.to }),
+            })}
             disabled={exportingReport === 'city'}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors disabled:bg-blue-300"
           >
             {exportingReport === 'city' ? 'Exporting...' : 'Municipal Compliance Report'}
           </button>
           <button
-            onClick={() => downloadReportPdf('inventory', `barangay_stock_report_${Date.now()}.pdf`, 'inventory')}
+            onClick={() => downloadReportPdf('inventory', `barangay_stock_report_${Date.now()}.pdf`, 'inventory', {
+              ...(filters.barangay_id && { barangay_id: filters.barangay_id }),
+            })}
             disabled={exportingReport === 'inventory'}
             className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors disabled:bg-green-300"
           >
             {exportingReport === 'inventory' ? 'Exporting...' : 'Barangay Stock Report'}
           </button>
           <button
-            onClick={() => downloadReportPdf('treatment-outcomes', `defaulter_summary_report_${Date.now()}.pdf`, 'outcomes')}
+            onClick={() => downloadReportPdf('treatment-outcomes', `defaulter_summary_report_${Date.now()}.pdf`, 'outcomes', {
+              ...(filters.barangay_id && { barangay_id: filters.barangay_id }),
+              ...(filters.from && { from: filters.from }),
+              ...(filters.to && { to: filters.to }),
+            })}
             disabled={exportingReport === 'outcomes'}
             className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors disabled:bg-red-300"
           >
