@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import Layout from "../../components/Layout";
 import { authFetch } from "../../services/auth.service.js";
-import { fetchInventoryByBarangay, createNurse, fetchNurses } from "../../services/barangay.service.js";
+import { fetchInventoryByBarangay, createNurse, fetchNurses, updateNurse, deleteNurse } from "../../services/barangay.service.js";
 import { fetchPatients, fetchEscalatedPatients, exportPatientsPdf } from "../../services/patient.service.js";
 import { fetchStockRequestAlerts, acknowledgeAlert, resolveAlert } from "../../services/alert.service.js";
+import AddMedicineModal from "../AddMedicineModal.jsx";
 
-const menuItems = ["Dashboard", "Barangays", "Patients", "Compliance Monitoring", "Medicine Inventory", "Medicine Dispensing", "Reports", "Heat Map"];
+const menuItems = ["Dashboard", "Health Centers", "Patients", "Appointments", "Compliance Monitoring", "Medicine Inventory", "Medicine Dispensing", "Reports", "Heat Map"];
 
 const BarangayDetailPage = () => {
   const [barangayData, setBarangayData] = useState(null);
@@ -22,14 +23,23 @@ const BarangayDetailPage = () => {
   const [loadingInventory, setLoadingInventory] = useState(true);
   const [loadingNurses, setLoadingNurses] = useState(true);
   const [error, setError] = useState('');
-  const [active, setActive] = useState("Barangays");
+  const [active, setActive] = useState("Health Centers");
 
   const [showNurseModal, setShowNurseModal] = useState(false);
-  const [nurseForm, setNurseForm] = useState({ first_name: '', last_name: '', email: '', password: '', phone_number: '' });
+  const [nurseForm, setNurseForm] = useState({ first_name: '', last_name: '', email: '', password: '', phone_number: '', health_center_id: '' });
   const [nurseLoading, setNurseLoading] = useState(false);
   const [nurseErrors, setNurseErrors] = useState([]);
   const [nurseSuccess, setNurseSuccess] = useState('');
   const [showNursePassword, setShowNursePassword] = useState(false);
+
+  const [editingNurse, setEditingNurse] = useState(null);
+  const [editNurseForm, setEditNurseForm] = useState({ first_name: '', last_name: '', email: '', phone_number: '' });
+  const [editNurseLoading, setEditNurseLoading] = useState(false);
+  const [editNurseErrors, setEditNurseErrors] = useState([]);
+
+  const [deletingNurse, setDeletingNurse] = useState(null);
+  const [deleteNurseLoading, setDeleteNurseLoading] = useState(false);
+  const [deleteNurseError, setDeleteNurseError] = useState('');
 
   const [escalatedPatients, setEscalated] = useState([]);
   const [loadingEscalation, setLoadingEscalation] = useState(true);
@@ -73,6 +83,23 @@ const BarangayDetailPage = () => {
       console.error('Failed to load stock alerts:', err);
     }
   }, [barangay_id]);
+
+  const loadInventory = useCallback(async () => {
+    setLoadingInventory(true);
+    try {
+      const data = await fetchInventoryByBarangay(barangay_id);
+      if (data.success) {
+        const raw = data.data?.inventory ?? data.data ?? [];
+        setInventory(Array.isArray(raw) ? raw : []);
+      }
+    } catch (err) {
+      console.error('Failed to load inventory:', err);
+    } finally {
+      setLoadingInventory(false);
+    }
+  }, [barangay_id]);
+
+  const [restockAlert, setRestockAlert] = useState(null);
 
   const handleAcknowledgeAlert = async (alertId) => {
     setProcessingIds((prev) => new Set(prev).add(alertId));
@@ -138,7 +165,7 @@ const BarangayDetailPage = () => {
         role: 'nurse',
         barangay_id,
         barangay_name: barangayName,
-        health_center_id: barangayData?.health_center?.health_center_id || '',
+        health_center_id: nurseForm.health_center_id || barangayData?.health_centers?.[0]?.health_center_id || '',
         ...(nurseForm.phone_number && {
           phone_number: nurseForm.phone_number.startsWith('09')
             ? '+63' + nurseForm.phone_number.slice(1)
@@ -148,7 +175,7 @@ const BarangayDetailPage = () => {
       const data = await createNurse(payload);
       if (data.success) {
         setNurseSuccess(`Nurse account created for ${data.data?.first_name} ${data.data?.last_name}.`);
-        setNurseForm({ first_name: '', last_name: '', email: '', password: '', phone_number: '' });
+        setNurseForm({ first_name: '', last_name: '', email: '', password: '', phone_number: '', health_center_id: '' });
         loadNurses();
       } else {
         setNurseErrors(data.errors?.map(e => e.message) || [data.message || 'Failed to create nurse account.']);
@@ -157,6 +184,53 @@ const BarangayDetailPage = () => {
       setNurseErrors(['Connection error.']);
     } finally {
       setNurseLoading(false);
+    }
+  };
+
+  const openEditNurse = (n) => {
+    setEditingNurse(n);
+    setEditNurseForm({
+      first_name: n.first_name || '',
+      last_name: n.last_name || '',
+      email: n.email || '',
+      phone_number: n.phone_number || '',
+    });
+    setEditNurseErrors([]);
+  };
+
+  const handleEditNurseSubmit = async () => {
+    setEditNurseLoading(true);
+    setEditNurseErrors([]);
+    try {
+      const data = await updateNurse(editingNurse.user_id, editNurseForm);
+      if (data.success) {
+        setEditingNurse(null);
+        loadNurses();
+      } else {
+        setEditNurseErrors(data.errors?.map(e => e.message) || [data.message || 'Failed to update nurse account.']);
+      }
+    } catch (err) {
+      setEditNurseErrors(['Connection error.']);
+    } finally {
+      setEditNurseLoading(false);
+    }
+  };
+
+  const handleDeleteNurseConfirm = async () => {
+    setDeleteNurseLoading(true);
+    setDeleteNurseError('');
+    try {
+      const data = await deleteNurse(deletingNurse.user_id);
+      if (data.success) {
+        setDeletingNurse(null);
+        loadNurses();
+      } else {
+        setDeleteNurseError(data.message || 'Failed to delete nurse account.');
+      }
+    } catch (err) {
+      setDeleteNurseError('Connection error.');
+    } finally {
+      setDeleteNurseLoading(false);
     }
   };
 
@@ -189,21 +263,6 @@ const BarangayDetailPage = () => {
       }
     };
 
-    const loadInventory = async () => {
-      setLoadingInventory(true);
-      try {
-        const data = await fetchInventoryByBarangay(barangay_id);
-        if (data.success) {
-          const raw = data.data?.inventory ?? data.data ?? [];
-          setInventory(Array.isArray(raw) ? raw : []);
-        }
-      } catch (err) {
-        console.error('Failed to load inventory:', err);
-      } finally {
-        setLoadingInventory(false);
-      }
-    };
-
     const loadEscalated = async () => {
       setLoadingEscalation(true);
       try {
@@ -222,7 +281,7 @@ const BarangayDetailPage = () => {
     loadBarangayData();
     loadNurses();
     loadStockAlerts();
-  }, [barangay_id, loadNurses, loadStockAlerts]);
+  }, [barangay_id, loadNurses, loadStockAlerts, loadInventory]);
 
   const totalAllocated = inventory.reduce((sum, i) => sum + (i.total_allocated || 0), 0);
   const totalDispensed = inventory.reduce((sum, i) => sum + (i.total_dispensed || 0), 0);
@@ -259,13 +318,20 @@ const BarangayDetailPage = () => {
         {/* Back button */}
         <button
           onClick={() => {
-            const returnPanel = location.state?.returnPanel || 'Barangays';
+            const returnPanel = location.state?.returnPanel || 'Health Centers';
             navigate('/dashboard', { state: { activePanel: returnPanel } });
           }}
           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-medium transition"
         >
           ← Back
         </button>
+
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {(barangayName || barangay_id || '').replace(/^Barangay\s+/i, '')}
+          </h1>
+          <p className="text-sm text-gray-500">Health Center Details</p>
+        </div>
 
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>
@@ -297,6 +363,15 @@ const BarangayDetailPage = () => {
                           {a.status}
                         </span>
                       </p>
+                      {a.stock_request_items?.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {a.stock_request_items.map((item, idx) => (
+                            <span key={idx} className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 font-medium">
+                              {item.drug_name} {item.strength}: {item.quantity_needed} {item.unit}(s)
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2 shrink-0">
                       {a.status === 'Active' && (
@@ -309,7 +384,7 @@ const BarangayDetailPage = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => handleResolveAlert(a.alert_id)}
+                        onClick={() => setRestockAlert(a)}
                         disabled={isProcessing}
                         className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-green-700 transition disabled:bg-green-300"
                       >
@@ -462,16 +537,16 @@ const BarangayDetailPage = () => {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
-                {["Name", "Email", "Phone", "Status", "Created"].map(h => (
+                {["Name", "Email", "Phone", "Status", "Created", "Actions"].map(h => (
                   <th key={h} className="p-4 text-left">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loadingNurses ? (
-                <tr><td colSpan={5} className="p-6 text-center text-gray-400">Loading nurses...</td></tr>
+                <tr><td colSpan={6} className="p-6 text-center text-gray-400">Loading nurses...</td></tr>
               ) : nurses.length === 0 ? (
-                <tr><td colSpan={5} className="p-6 text-center text-gray-400">No nurses assigned to this barangay.</td></tr>
+                <tr><td colSpan={6} className="p-6 text-center text-gray-400">No nurses assigned to this barangay.</td></tr>
               ) : (
                 nurses.map((n, i) => (
                   <tr key={i} className="border-t hover:bg-gray-50 transition-colors">
@@ -485,6 +560,22 @@ const BarangayDetailPage = () => {
                     </td>
                     <td className="p-4 text-gray-500 text-xs whitespace-nowrap">
                       {n.created_at ? new Date(n.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => openEditNurse(n)}
+                          className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => { setDeletingNurse(n); setDeleteNurseError(''); }}
+                          className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-50 text-red-600 hover:bg-red-100 transition"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -597,16 +688,123 @@ const BarangayDetailPage = () => {
                 <label className="text-xs text-zinc-600 font-medium">Barangay</label>
                 <input className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed" value={barangayName || barangay_id} disabled readOnly />
               </div>
+              {(barangayData?.health_centers?.length || 0) > 1 && (
+                <div>
+                  <label className="text-xs text-zinc-600 font-medium">Health Center *</label>
+                  <select
+                    className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    value={nurseForm.health_center_id}
+                    onChange={e => setNurseForm(p => ({ ...p, health_center_id: e.target.value }))}
+                  >
+                    <option value="">Select Health Center</option>
+                    {barangayData.health_centers.map(hc => (
+                      <option key={hc.health_center_id} value={hc.health_center_id}>{hc.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => { setShowNurseModal(false); setNurseForm({ first_name: '', last_name: '', email: '', password: '', phone_number: '' }); setNurseErrors([]); }} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={() => { setShowNurseModal(false); setNurseForm({ first_name: '', last_name: '', email: '', password: '', phone_number: '', health_center_id: '' }); setNurseErrors([]); }} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
               <button onClick={handleNurseSubmit} disabled={nurseLoading} className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition disabled:bg-green-400">
                 {nurseLoading ? 'Creating...' : 'Create Nurse Account'}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Nurse Modal */}
+      {editingNurse && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Edit Nurse</h2>
+              <button onClick={() => setEditingNurse(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+
+            {editNurseErrors.length > 0 && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm space-y-1">
+                {editNurseErrors.map((e, i) => <p key={i}>• {e}</p>)}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-zinc-600 font-medium">First Name *</label>
+                  <input className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" value={editNurseForm.first_name} onChange={e => setEditNurseForm(p => ({ ...p, first_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-600 font-medium">Last Name *</label>
+                  <input className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" value={editNurseForm.last_name} onChange={e => setEditNurseForm(p => ({ ...p, last_name: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-zinc-600 font-medium">Email *</label>
+                <input type="email" className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" value={editNurseForm.email} onChange={e => setEditNurseForm(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-600 font-medium">Phone Number</label>
+                <input className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="09XXXXXXXXX" value={editNurseForm.phone_number} onChange={e => setEditNurseForm(p => ({ ...p, phone_number: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setEditingNurse(null)} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleEditNurseSubmit} disabled={editNurseLoading} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:bg-blue-400">
+                {editNurseLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Nurse Confirmation */}
+      {deletingNurse && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-8 text-center">
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Delete nurse account?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              This will permanently delete {deletingNurse.first_name} {deletingNurse.last_name}'s account. This action cannot be undone.
+            </p>
+            {deleteNurseError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm text-left">{deleteNurseError}</div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingNurse(null)}
+                className="flex-1 px-4 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteNurseConfirm}
+                disabled={deleteNurseLoading}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition disabled:bg-red-300"
+              >
+                {deleteNurseLoading ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mark Stock Sent — restocks inventory, then resolves the alert */}
+      {restockAlert && (
+        <AddMedicineModal
+          barangayId={barangay_id}
+          healthCenterId={barangayData?.health_centers?.[0]?.health_center_id}
+          existingItems={inventory}
+          recommendedItems={restockAlert.stock_request_items || []}
+          onClose={() => setRestockAlert(null)}
+          onSuccess={async () => {
+            await handleResolveAlert(restockAlert.alert_id);
+            await loadInventory();
+            setRestockAlert(null);
+          }}
+        />
       )}
     </Layout>
   );

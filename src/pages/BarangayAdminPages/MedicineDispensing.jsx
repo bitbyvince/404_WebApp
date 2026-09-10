@@ -51,8 +51,8 @@ function formatDate(dateStr) {
   });
 }
 
-function drugKey(drugName, strength) {
-  return `${drugName}|${strength}`;
+function drugKey(drugName) {
+  return drugName;
 }
 
 export default function MedicineDispensing() {
@@ -162,12 +162,9 @@ export default function MedicineDispensing() {
     }
     const regimen = selectedPatient.drug_regimen || [];
     const initial = {};
-    inventoryItems.forEach((item) => {
-      const key = drugKey(item.drug_name, item.strength);
-      const regimenEntry = regimen.find(
-        (r) => r.drug_name === item.drug_name && r.strength === item.strength
-      );
-      initial[key] = regimenEntry ? regimenEntry.number_to_be_taken * daysSupply : 0;
+    regimen.forEach((entry) => {
+      const inv = inventoryItems.find((item) => item.drug_name === entry.drug_name);
+      initial[drugKey(entry.drug_name)] = inv ? entry.number_to_be_taken * daysSupply : 0;
     });
     setDrugQuantities(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,8 +176,8 @@ export default function MedicineDispensing() {
     setDrugQuantities((prev) => {
       const updated = { ...prev };
       regimen.forEach((entry) => {
-        const key = drugKey(entry.drug_name, entry.strength);
-        updated[key] = entry.number_to_be_taken * daysSupply;
+        const inv = inventoryItems.find((item) => item.drug_name === entry.drug_name);
+        if (inv) updated[drugKey(entry.drug_name)] = entry.number_to_be_taken * daysSupply;
       });
       return updated;
     });
@@ -263,12 +260,12 @@ export default function MedicineDispensing() {
   const handleDispense = async () => {
     if (!selectedPatient) return;
 
-    const medicines = inventoryItems
-      .map((item) => {
-        const key = drugKey(item.drug_name, item.strength);
-        const qty = drugQuantities[key] || 0;
-        return qty > 0
-          ? { drug_name: item.drug_name, strength: item.strength, quantity_dispensed: qty }
+    const medicines = (selectedPatient.drug_regimen || [])
+      .map((entry) => {
+        const inv = inventoryItems.find((item) => item.drug_name === entry.drug_name);
+        const qty = drugQuantities[drugKey(entry.drug_name)] || 0;
+        return inv && qty > 0
+          ? { drug_name: entry.drug_name, strength: inv.strength, quantity_dispensed: qty }
           : null;
       })
       .filter(Boolean);
@@ -586,21 +583,20 @@ export default function MedicineDispensing() {
                 </div>
 
                 <label style={{ fontSize: "12px", fontWeight: 600, color: "#3C4560", display: "block", marginBottom: "8px" }}>
-                  Medicines to dispense (from {isSuperAdmin ? "the patient's barangay" : "barangay"} inventory)
+                  Medicines to dispense (from this patient's regimen)
                 </label>
                 <div style={{ marginBottom: "18px", maxHeight: "320px", overflowY: "auto" }}>
-                  {inventoryItems.length === 0 ? (
+                  {(selectedPatient.drug_regimen || []).length === 0 ? (
                     <div style={{ fontSize: "12px", color: "#9AA1B9", padding: "12px 0" }}>
-                      No medicines found in this barangay's inventory.
+                      This patient has no drug regimen on file.
                     </div>
                   ) : (
-                    inventoryItems.map((item) => {
-                      const key = drugKey(item.drug_name, item.strength);
+                    (selectedPatient.drug_regimen || []).map((entry) => {
+                      const key = drugKey(entry.drug_name);
+                      const inv = inventoryItems.find((item) => item.drug_name === entry.drug_name);
                       const qty = drugQuantities[key] || 0;
-                      const isPrescribed = (selectedPatient.drug_regimen || []).some(
-                        (r) => r.drug_name === item.drug_name && r.strength === item.strength
-                      );
-                      const insufficient = qty > item.remaining_stock;
+                      const insufficient = inv && qty > inv.remaining_stock;
+                      const unavailable = !inv;
 
                       return (
                         <div
@@ -610,36 +606,29 @@ export default function MedicineDispensing() {
                             alignItems: "center",
                             justifyContent: "space-between",
                             padding: "10px 12px",
-                            border: `1px solid ${insufficient ? "#F5C2C2" : "#E2E5F0"}`,
+                            border: `1px solid ${insufficient || unavailable ? "#F5C2C2" : "#E2E5F0"}`,
                             borderRadius: "8px",
                             marginBottom: "8px",
-                            backgroundColor: insufficient ? "#FDEAEA" : "#FAFBFC",
+                            backgroundColor: insufficient || unavailable ? "#FDEAEA" : "#FAFBFC",
                             gap: "10px",
                           }}
                         >
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: "13px", fontWeight: 600, color: "#12183A" }}>
-                              {item.drug_name} {item.strength}
-                              {isPrescribed && (
-                                <span
-                                  style={{
-                                    marginLeft: "6px",
-                                    fontSize: "9px",
-                                    fontWeight: 700,
-                                    color: "#2F5CE0",
-                                    backgroundColor: "#EEF2FE",
-                                    padding: "2px 6px",
-                                    borderRadius: "999px",
-                                  }}
-                                >
-                                  PRESCRIBED
-                                </span>
-                              )}
+                              {entry.drug_name} {inv ? inv.strength : entry.strength}
                             </div>
                             <div style={{ fontSize: "11px", color: "#6B7280" }}>
-                              {item.remaining_stock} {item.unit}(s) in stock
-                              {insufficient && (
-                                <span style={{ color: "#D4453D", fontWeight: 700 }}> · exceeds stock</span>
+                              {unavailable ? (
+                                <span style={{ color: "#D4453D", fontWeight: 700 }}>
+                                  Not in this barangay's inventory
+                                </span>
+                              ) : (
+                                <>
+                                  {inv.remaining_stock} {inv.unit}(s) in stock
+                                  {insufficient && (
+                                    <span style={{ color: "#D4453D", fontWeight: 700 }}> · exceeds stock</span>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -647,6 +636,7 @@ export default function MedicineDispensing() {
                             type="number"
                             min="0"
                             value={qty}
+                            disabled={unavailable}
                             onChange={(e) => handleQuantityChange(key, e.target.value)}
                             style={{
                               width: "70px",
@@ -655,6 +645,7 @@ export default function MedicineDispensing() {
                               padding: "6px 8px",
                               fontSize: "13px",
                               textAlign: "center",
+                              backgroundColor: unavailable ? "#F1F2F7" : "#FFFFFF",
                             }}
                           />
                         </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { createNurse, fetchNurses, deactivateNurse, reactivateNurse } from "../../services/barangay.service.js";
+import { createNurse, fetchNurses, deactivateNurse, reactivateNurse, updateNurse, deleteNurse } from "../../services/barangay.service.js";
 
 const EMPTY_FORM = {
   first_name: '',
@@ -22,7 +22,18 @@ const NurseManagementPanel = () => {
   const [total, setTotal]               = useState(0);
   const [sortField, setSortField]       = useState('created_at');
   const [sortDir, setSortDir]           = useState('desc');
+  const [dateFrom, setDateFrom]         = useState('');
+  const [dateTo, setDateTo]             = useState('');
   const limit = 10;
+
+  const [editingNurse, setEditingNurse]   = useState(null);
+  const [editForm, setEditForm]           = useState({ first_name: '', last_name: '', email: '', phone_number: '' });
+  const [editLoading, setEditLoading]     = useState(false);
+  const [editError, setEditError]         = useState('');
+
+  const [deletingNurse, setDeletingNurse] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError]     = useState('');
 
   const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
   const labelClass = "text-xs text-zinc-600 font-medium";
@@ -102,8 +113,63 @@ const NurseManagementPanel = () => {
     }
   };
 
-  // Client-side sort
-  const sorted = [...nurses].sort((a, b) => {
+  const openEditNurse = (nurse) => {
+    setEditingNurse(nurse);
+    setEditForm({
+      first_name: nurse.first_name || '',
+      last_name: nurse.last_name || '',
+      email: nurse.email || '',
+      phone_number: nurse.phone_number || '',
+    });
+    setEditError('');
+  };
+
+  const handleEditSubmit = async () => {
+    setEditLoading(true);
+    setEditError('');
+    try {
+      const data = await updateNurse(editingNurse.user_id, editForm);
+      if (data.success) {
+        setEditingNurse(null);
+        loadNurses(page);
+      } else {
+        setEditError(data.message || 'Failed to update nurse account.');
+      }
+    } catch (err) {
+      setEditError('Connection error.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      const data = await deleteNurse(deletingNurse.user_id);
+      if (data.success) {
+        setDeletingNurse(null);
+        loadNurses(page);
+      } else {
+        setDeleteError(data.message || 'Failed to delete nurse account.');
+      }
+    } catch (err) {
+      setDeleteError('Connection error.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Client-side date range filter + sort
+  const filtered = nurses.filter((n) => {
+    if (!n.created_at) return !dateFrom && !dateTo;
+    const createdDate = n.created_at.slice(0, 10);
+    if (dateFrom && createdDate < dateFrom) return false;
+    if (dateTo && createdDate > dateTo) return false;
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
     let valA = a[sortField] ?? '';
     let valB = b[sortField] ?? '';
     if (typeof valA === 'string') valA = valA.toLowerCase();
@@ -120,6 +186,11 @@ const NurseManagementPanel = () => {
       setSortField(field);
       setSortDir('asc');
     }
+  };
+
+  const toggleCreatedSort = () => {
+    setSortField('created_at');
+    setSortDir(d => (sortField === 'created_at' && d === 'desc') ? 'asc' : 'desc');
   };
 
   const SortIcon = ({ field }) => {
@@ -203,6 +274,27 @@ const NurseManagementPanel = () => {
       {/* Nurses Table */}
       <div className="mt-10">
         <h2 className="text-lg font-bold text-gray-800 mb-4">Nurses in Your Barangay</h2>
+
+        <div className="flex flex-wrap gap-3 items-center mb-4">
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            From
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
+            to
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
+          </label>
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+              ✕ Clear Dates
+            </button>
+          )}
+          <button
+            onClick={toggleCreatedSort}
+            className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 transition text-gray-600"
+          >
+            {sortField === 'created_at' && sortDir === 'asc' ? 'Oldest → Newest' : 'Newest → Oldest'}
+          </button>
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
@@ -242,16 +334,30 @@ const NurseManagementPanel = () => {
                     {nurse.created_at ? new Date(nurse.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
                   </td>
                   <td className="p-3">
-                    <button
-                      onClick={() => handleToggleStatus(nurse)}
-                      className={`text-xs px-3 py-1 rounded-lg font-medium transition ${
-                        nurse.is_active
-                          ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                          : 'bg-green-50 text-green-600 hover:bg-green-100'
-                      }`}
-                    >
-                      {nurse.is_active ? 'Deactivate' : 'Reactivate'}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => openEditNurse(nurse)}
+                        className="text-xs px-3 py-1 rounded-lg font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => { setDeletingNurse(nurse); setDeleteError(''); }}
+                        className="text-xs px-3 py-1 rounded-lg font-medium bg-red-50 text-red-600 hover:bg-red-100 transition"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => handleToggleStatus(nurse)}
+                        className={`text-xs px-3 py-1 rounded-lg font-medium transition ${
+                          nurse.is_active
+                            ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                            : 'bg-green-50 text-green-600 hover:bg-green-100'
+                        }`}
+                      >
+                        {nurse.is_active ? 'Deactivate' : 'Reactivate'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -272,6 +378,80 @@ const NurseManagementPanel = () => {
           )}
         </div>
       </div>
+
+      {/* Edit Nurse Modal */}
+      {editingNurse && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Edit Nurse</h2>
+              <button onClick={() => setEditingNurse(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+
+            {editError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{editError}</div>
+            )}
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>First Name *</label>
+                  <input className={inputClass} value={editForm.first_name} onChange={e => setEditForm(p => ({ ...p, first_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Last Name *</label>
+                  <input className={inputClass} value={editForm.last_name} onChange={e => setEditForm(p => ({ ...p, last_name: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Email *</label>
+                <input type="email" className={inputClass} value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className={labelClass}>Phone Number</label>
+                <input className={inputClass} value={editForm.phone_number} onChange={e => setEditForm(p => ({ ...p, phone_number: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setEditingNurse(null)} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleEditSubmit} disabled={editLoading} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:bg-blue-400">
+                {editLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Nurse Confirmation */}
+      {deletingNurse && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-8 text-center">
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Delete nurse account?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              This will permanently delete {deletingNurse.first_name} {deletingNurse.last_name}'s account. This action cannot be undone.
+            </p>
+            {deleteError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm text-left">{deleteError}</div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingNurse(null)}
+                className="flex-1 px-4 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteLoading}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition disabled:bg-red-300"
+              >
+                {deleteLoading ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

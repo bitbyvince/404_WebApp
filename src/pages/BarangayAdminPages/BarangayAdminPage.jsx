@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../../components/Layout";
 import { fetchMissedDoseAlerts } from "../../services/alert.service.js";
+import { fetchSymptomLogs } from "../../services/symptomLog.service.js";
 
 import DashboardPanel            from "./BarangayAdminDashboard";
 import PatientsPanel             from "./BarangayAdminPatientsPage";
 import AddPatientPanel           from "./BarangayAdminAddPatientsPage";
 import AppointmentsPanel         from "./BarangayAdminAppointmentsPage";
 import ComplianceMonitoringPanel from "./BarangayAdminCompliancePage";
+import SymptomLogsPanel          from "../SymptomLogsPage";
 import MedicineInventoryPanel    from "./BarangayAdminInventoryPage";
 import ReportsPanel              from "./BarangayAdminReportsPage";
 import HeatMapPanel              from "./BarangayAdminHeatMap";
@@ -19,6 +21,7 @@ const BarangayAdminPage = () => {
   const admin        = JSON.parse(localStorage.getItem("admin") || "{}");
   const barangayName = admin?.barangay_name || "Barangay Admin";
   const [missedDoseAlertCount, setMissedDoseAlertCount] = useState(0);
+  const [unreviewedSymptomCount, setUnreviewedSymptomCount] = useState(0);
 
   const loadMissedDoseAlertCount = async () => {
     try {
@@ -32,11 +35,27 @@ const BarangayAdminPage = () => {
     }
   };
 
+  const loadUnreviewedSymptomCount = async () => {
+    try {
+      const data = await fetchSymptomLogs({ reviewed: "false", limit: 1 });
+      if (data.success) setUnreviewedSymptomCount(data.data?.total ?? 0);
+    } catch (err) {
+      console.error("Failed to load unreviewed symptom count:", err);
+    }
+  };
+
   useEffect(() => {
     loadMissedDoseAlertCount();
-    const interval = setInterval(loadMissedDoseAlertCount, 60000);
+    loadUnreviewedSymptomCount();
+    const interval = setInterval(() => {
+      loadMissedDoseAlertCount();
+      loadUnreviewedSymptomCount();
+    }, 60000);
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") loadMissedDoseAlertCount();
+      if (document.visibilityState === "visible") {
+        loadMissedDoseAlertCount();
+        loadUnreviewedSymptomCount();
+      }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
@@ -51,6 +70,7 @@ const BarangayAdminPage = () => {
     { name: "Add Patient" },
     { name: "Appointments" },
     { name: "Compliance Monitoring", badge: missedDoseAlertCount },
+    { name: "Symptom Logs", badge: unreviewedSymptomCount },
     { name: "Medicine Inventory" },
     { name: "Medicine Dispensing" },
     { name: "Reports" },
@@ -65,6 +85,7 @@ const BarangayAdminPage = () => {
       case "Add Patient":           return <AddPatientPanel />;
       case "Appointments":          return <AppointmentsPanel />;
       case "Compliance Monitoring": return <ComplianceMonitoringPanel />;
+      case "Symptom Logs":          return <SymptomLogsPanel />;
       case "Medicine Inventory":    return <MedicineInventoryPanel />;
       case "Reports":               return <ReportsPanel />;
       case "Heat Map":              return <HeatMapPanel />;

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 
-const Layout = ({ children, menuItems = [], activeMenu, setActiveMenu, title, subtitle }) => {
+const Layout = ({ children, menuItems = [], activeMenu, setActiveMenu, title, subtitle, sidebarFooter }) => {
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
@@ -48,7 +48,8 @@ const Layout = ({ children, menuItems = [], activeMenu, setActiveMenu, title, su
           })}
         </nav>
 
-        <div className="p-4 border-t border-blue-800">
+        <div className="p-4 border-t border-blue-800 space-y-2">
+          {sidebarFooter}
           <button
             onClick={() => setShowLogoutConfirm(true)}
             className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"

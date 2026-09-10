@@ -30,6 +30,9 @@ const AppointmentsPanel = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [purposeFilter, setPurposeFilter] = useState("");
   const [barangayFilter, setBarangayFilter] = useState("");
+  const [fromFilter, setFromFilter] = useState("");
+  const [toFilter, setToFilter] = useState("");
+  const [sortDir, setSortDir] = useState("desc");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -55,6 +58,9 @@ const AppointmentsPanel = () => {
         status: statusFilter,
         purpose: purposeFilter,
         barangay_id: barangayFilter,
+        from: fromFilter,
+        to: toFilter,
+        sortDir,
         page,
         limit,
       });
@@ -69,13 +75,13 @@ const AppointmentsPanel = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, purposeFilter, barangayFilter, page]);
+  }, [statusFilter, purposeFilter, barangayFilter, fromFilter, toFilter, sortDir, page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const hasFilters = statusFilter || purposeFilter || barangayFilter;
+  const hasFilters = statusFilter || purposeFilter || barangayFilter || fromFilter || toFilter;
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -106,9 +112,21 @@ const AppointmentsPanel = () => {
           <option value="Consultation">Consultation</option>
           <option value="Routine">Routine</option>
         </select>
+        <label className="flex items-center gap-2 text-xs text-gray-500">
+          From
+          <input type="date" value={fromFilter} onChange={(e) => { setFromFilter(e.target.value); setPage(1); }} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
+          to
+          <input type="date" value={toFilter} onChange={(e) => { setToFilter(e.target.value); setPage(1); }} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
+        </label>
+        <button
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600"
+        >
+          {sortDir === "asc" ? "Oldest → Newest" : "Newest → Oldest"}
+        </button>
         {hasFilters && (
           <button
-            onClick={() => { setStatusFilter(""); setPurposeFilter(""); setBarangayFilter(""); setPage(1); }}
+            onClick={() => { setStatusFilter(""); setPurposeFilter(""); setBarangayFilter(""); setFromFilter(""); setToFilter(""); setPage(1); }}
             className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition"
           >
             ✕ Clear

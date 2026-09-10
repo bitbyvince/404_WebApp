@@ -14,11 +14,14 @@ const formatPhilHealth = (val) => {
   return v;
 };
 
+const OTHER_DRUGS = ['Isoniazid', 'Rifampicin', 'Pyrazinamide', 'Ethambutol'];
+
 
 
 const EMPTY_FORM = {
   last_name: '', first_name: '', middle_name: '',
   birth_date: '', age: '', sex: '',
+  weight_kg: '', height_cm: '',
   philhealth_number: '', phone_number: '', email: '',
   barangay_name: '', health_center_name: '',
   assigned_nurse_id: '',
@@ -29,7 +32,7 @@ const EMPTY_FORM = {
   date_started: '', dat_support: '', regimen_type: '',
   drug_regimen: [{ drug_name: '', strength: '', unit: 'tablet', number_to_be_taken: 1 }],
   treatment_supporter: { name: '', contact: '' },
-  contact_tracing: { number_of_contacts: 0, schedule: '' },
+  contact_tracing: { contacts: [{ name: '' }], schedule: '' },
   additional_notes: '',
 };
 
@@ -52,7 +55,8 @@ const AddPatientPanel = () => {
         const data = await fetchBarangays();
         if (data.success) {
           const matched = (data.barangays || []).find(b => b.barangay_id === barangayId);
-          setHealthCenterName(matched?.health_center?.name || '');
+          const myCenter = (matched?.health_centers || []).find(hc => hc.health_center_id === healthCenterId);
+          setHealthCenterName(myCenter?.name || matched?.health_centers?.[0]?.name || '');
         }
       } catch (err) {
         console.error('Failed to fetch health center:', err);
@@ -82,8 +86,24 @@ const AddPatientPanel = () => {
   const handleDrugChange = (index, field, value) => {
     const updated = [...form.drug_regimen];
     updated[index] = { ...updated[index], [field]: value };
+    if (field === 'drug_name') updated[index].strength = '';
     setForm(prev => ({ ...prev, drug_regimen: updated }));
   };
+  const handleContactChange = (index, value) => {
+    setForm(prev => {
+      const contacts = [...prev.contact_tracing.contacts];
+      contacts[index] = { ...contacts[index], name: value };
+      return { ...prev, contact_tracing: { ...prev.contact_tracing, contacts } };
+    });
+  };
+  const addContact = () => setForm(prev => ({
+    ...prev,
+    contact_tracing: { ...prev.contact_tracing, contacts: [...prev.contact_tracing.contacts, { name: '' }] },
+  }));
+  const removeContact = (index) => setForm(prev => ({
+    ...prev,
+    contact_tracing: { ...prev.contact_tracing, contacts: prev.contact_tracing.contacts.filter((_, i) => i !== index) },
+  }));
   const addDrug    = () => setForm(prev => ({ ...prev, drug_regimen: [...prev.drug_regimen, { drug_name: '', strength: '', unit: 'tablet', number_to_be_taken: 1 }] }));
   const removeDrug = (index) => setForm(prev => ({ ...prev, drug_regimen: prev.drug_regimen.filter((_, i) => i !== index) }));
 
@@ -96,13 +116,15 @@ const AddPatientPanel = () => {
       const payload = {
         ...form,
         age: parseInt(form.age),
+        weight_kg: form.weight_kg !== '' ? parseFloat(form.weight_kg) : null,
+        height_cm: form.height_cm !== '' ? parseFloat(form.height_cm) : null,
         barangay_id: barangayId,
         barangay_name: barangayName,
         health_center_id: healthCenterId,
         health_center_name: healthCenterName,
         contact_tracing: {
-          ...form.contact_tracing,
-          number_of_contacts: parseInt(form.contact_tracing.number_of_contacts),
+          number_of_contacts: form.contact_tracing.contacts.length,
+          contact_names: form.contact_tracing.contacts.map(c => c.name),
           schedule: form.contact_tracing.schedule || null,
         },
         drug_regimen: form.drug_regimen.map(d => ({ ...d, number_to_be_taken: parseInt(d.number_to_be_taken) })),
@@ -159,6 +181,8 @@ const AddPatientPanel = () => {
               </select>
             </div>
             <div><label className={labelClass}>Birthday *</label><input type="date" className={inputClass} value={form.birth_date} onChange={e => handleFormChange('birth_date', e.target.value)} required /></div>
+            <div><label className={labelClass}>Weight (kg)</label><input type="number" min={0} step="0.1" className={inputClass} value={form.weight_kg} onChange={e => handleFormChange('weight_kg', e.target.value)} /></div>
+            <div><label className={labelClass}>Height (cm)</label><input type="number" min={0} step="0.1" className={inputClass} value={form.height_cm} onChange={e => handleFormChange('height_cm', e.target.value)} /></div>
             <div>
               <label className={labelClass}>Phone Number * (e.g. 09171234567)</label>
               <input
@@ -322,7 +346,9 @@ const AddPatientPanel = () => {
                     </select>
                   )}
                 </div>
-                <div><label className={labelClass}>Strength</label><input className={inputClass} placeholder="Strength" value={drug.strength} onChange={e => handleDrugChange(index, 'strength', e.target.value)} required /></div>
+                {OTHER_DRUGS.includes(drug.drug_name) && (
+                  <div><label className={labelClass}>Strength</label><input className={inputClass} placeholder="e.g. 300mg" value={drug.strength} onChange={e => handleDrugChange(index, 'strength', e.target.value)} required /></div>
+                )}
                 <div>
                   <label className={labelClass}>Unit</label>
                   <select className={inputClass} value={drug.unit} onChange={e => handleDrugChange(index, 'unit', e.target.value)}>
@@ -366,11 +392,26 @@ const AddPatientPanel = () => {
 
         {/* Contact Tracing */}
         <div className="bg-gray-50 rounded-xl p-5">
-          <h3 className="text-base font-bold text-blue-700 mb-4">Contact Tracing (Optional)</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className={labelClass}>Number of Contacts</label><input type="number" min={0} className={inputClass} value={form.contact_tracing.number_of_contacts} onChange={e => setForm(prev => ({ ...prev, contact_tracing: { ...prev.contact_tracing, number_of_contacts: e.target.value } }))} /></div>
-            <div><label className={labelClass}>Contact Tracing Schedule</label><input type="date" className={inputClass} value={form.contact_tracing.schedule} onChange={e => setForm(prev => ({ ...prev, contact_tracing: { ...prev.contact_tracing, schedule: e.target.value } }))} /></div>
+          <h3 className="text-base font-bold text-blue-700 mb-4">Contact Tracing</h3>
+          <div>
+            <label className={labelClass}>Contact Tracing Schedule</label>
+            <input type="date" className={`${inputClass} mb-3`} value={form.contact_tracing.schedule} onChange={e => setForm(prev => ({ ...prev, contact_tracing: { ...prev.contact_tracing, schedule: e.target.value } }))} />
           </div>
+          {form.contact_tracing.contacts.map((contact, index) => (
+            <div key={index} className="bg-white rounded-lg p-4 mb-3 border border-gray-200">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-sm font-semibold text-blue-600">Contact {index + 1}</span>
+                {form.contact_tracing.contacts.length > 1 && (
+                  <button type="button" onClick={() => removeContact(index)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                )}
+              </div>
+              <label className={labelClass}>Name *</label>
+              <input className={inputClass} value={contact.name} onChange={e => handleContactChange(index, e.target.value)} required />
+            </div>
+          ))}
+          <button type="button" onClick={addContact} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium mt-1">
+            ⊕ Add Contact
+          </button>
         </div>
 
         {/* Notes */}

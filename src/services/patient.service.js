@@ -3,7 +3,7 @@ import { authFetch } from './auth.service';
 
 const BASE_URL = import.meta.env.VITE_API_URL;
 
-export const fetchPatients = async ({ search, barangay_id, risk_level, treatment_phase, sex, min_age, max_age, from, to, page, limit }) => {
+export const fetchPatients = async ({ search, barangay_id, risk_level, treatment_phase, sex, min_age, max_age, from, to, is_active, page, limit }) => {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (barangay_id) params.set('barangay_id', barangay_id);
@@ -14,10 +14,43 @@ export const fetchPatients = async ({ search, barangay_id, risk_level, treatment
   if (max_age !== undefined && max_age !== '') params.set('max_age', max_age);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
+  if (is_active !== undefined) params.set('is_active', is_active);
   params.set('page', page);
   params.set('limit', limit);
 
   const res = await authFetch(`${BASE_URL}/api/patients?${params}`);
+  return res.json();
+};
+
+export const updatePatient = async (patient_id, payload) => {
+  const res = await authFetch(`${BASE_URL}/api/patients/${patient_id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+};
+
+export const transferPatient = async (patient_id, payload) => {
+  const res = await authFetch(`${BASE_URL}/api/patients/${patient_id}/transfer`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+};
+
+export const deactivatePatient = async (patient_id) => {
+  const res = await authFetch(`${BASE_URL}/api/patients/${patient_id}/deactivate`, {
+    method: 'PATCH',
+  });
+  return res.json();
+};
+
+export const reactivatePatient = async (patient_id) => {
+  const res = await authFetch(`${BASE_URL}/api/patients/${patient_id}/reactivate`, {
+    method: 'PATCH',
+  });
   return res.json();
 };
 

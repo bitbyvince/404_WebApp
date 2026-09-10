@@ -67,7 +67,11 @@ const HeatMapPanel = () => {
     const loadHistory = async () => {
       setLoadingHistory(true);
       try {
-        const data = await fetchHeatmapHistory(selected.barangay_id, { period, limit: 12 });
+        const data = await fetchHeatmapHistory(selected.barangay_id, {
+          period,
+          limit: 12,
+          health_center_id: selected.health_center_id,
+        });
         if (data.success) {
           const raw = data.data ?? [];
           setHistory(Array.isArray(raw) ? raw : []);
@@ -82,7 +86,10 @@ const HeatMapPanel = () => {
   }, [selected, period]);
 
   const filtered = snapshots
-    .filter(s => s.barangay_name?.toLowerCase().includes(search.toLowerCase()))
+    .filter(s => {
+      const q = search.toLowerCase();
+      return s.barangay_name?.toLowerCase().includes(q) || s.health_center_name?.toLowerCase().includes(q);
+    })
     .sort((a, b) => {
       if (sortBy === "compliance_rate") return a.compliance_rate - b.compliance_rate;
       if (sortBy === "active_cases")    return b.active_cases - a.active_cases;
@@ -109,7 +116,7 @@ const HeatMapPanel = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Compliance Heat Map</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Municipality-wide TB compliance overview by barangay</p>
+          <p className="text-sm text-gray-500 mt-0.5">Municipality-wide TB compliance overview by health center</p>
         </div>
         <div className="flex items-center gap-2">
           {/* View Toggle */}
@@ -150,14 +157,14 @@ const HeatMapPanel = () => {
       {/* Summary Cards */}
       <div className="grid grid-cols-5 gap-4">
         {[
-          { label: "Total Active Cases",  val: totalCases,          color: "text-blue-600" },
-          { label: "At Risk",             val: totalAtRisk,         color: "text-yellow-600" },
-          { label: "Defaulters",          val: totalDefaulters,     color: "text-red-600" },
-          { label: "Critical Barangays",  val: criticalCount,       color: "text-orange-600" },
-          { label: "Avg Compliance",      val: `${avgCompliance}%`, color: "text-green-600" },
+          { label: "Total Active Cases",   val: totalCases,          color: "text-blue-600",   accent: "border-l-blue-400" },
+          { label: "At Risk",              val: totalAtRisk,         color: "text-yellow-600", accent: "border-l-yellow-400" },
+          { label: "Defaulters",           val: totalDefaulters,     color: "text-red-600",    accent: "border-l-red-400" },
+          { label: "Critical Facilities",  val: criticalCount,       color: "text-orange-600", accent: "border-l-orange-400" },
+          { label: "Avg Compliance",       val: `${avgCompliance}%`, color: "text-green-600",  accent: "border-l-green-400" },
         ].map((c, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <p className="text-xs text-gray-500 mb-1">{c.label}</p>
+          <div key={i} className={`bg-white rounded-xl border border-gray-100 border-l-4 ${c.accent} shadow-sm p-4 transition hover:shadow-md`}>
+            <p className="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">{c.label}</p>
             <p className={`text-2xl font-bold ${c.color}`}>{c.val}</p>
           </div>
         ))}
@@ -183,7 +190,7 @@ const HeatMapPanel = () => {
                 <span className="bg-blue-50 text-blue-600 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-blue-100">
                   {PERIODS.find(p => p.value === period)?.label}
                 </span>
-                Click a barangay marker for details
+                Click a health center marker for details
               </span>
             </div>
 
@@ -203,59 +210,69 @@ const HeatMapPanel = () => {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
 
-                {snapshots.map((brgy, i) => {
-                  if (!brgy.coordinates?.coordinates) return null;
-                  const [lng, lat] = brgy.coordinates.coordinates;
+                {/* One boundary outline per barangay (not per facility) — colored
+                    by that barangay's worst risk level across all its health
+                    centers, so barangays with several facilities don't get
+                    the same polygon drawn on top of itself repeatedly. */}
+                {Object.values(
+                  snapshots.reduce((acc, s) => {
+                    if (!s.boundary_geojson?.coordinates) return acc;
+                    const rank = { low: 0, moderate: 1, high: 2, critical: 3 };
+                    const existing = acc[s.barangay_id];
+                    if (!existing || rank[s.risk_level] > rank[existing.risk_level]) {
+                      acc[s.barangay_id] = s;
+                    }
+                    return acc;
+                  }, {})
+                ).map((brgy) => {
                   const c = riskColor(brgy.risk_level);
-                  const isSelected = selected?.barangay_id === brgy.barangay_id;
-
-                  // Boundary polygon
-                  const polygonCoords = brgy.boundary_geojson?.coordinates?.[0]?.map(
-                    ([lng, lat]) => [lat, lng]
+                  const polygonCoords = brgy.boundary_geojson.coordinates[0].map(([lng, lat]) => [lat, lng]);
+                  return (
+                    <Polygon
+                      key={`boundary-${brgy.barangay_id}`}
+                      positions={polygonCoords}
+                      pathOptions={{ color: c.hex, fillColor: c.hex, fillOpacity: 0.12, weight: 1 }}
+                    />
                   );
+                })}
+
+                {snapshots.map((hc) => {
+                  if (!hc.coordinates?.coordinates) return null;
+                  const [lng, lat] = hc.coordinates.coordinates;
+                  const c = riskColor(hc.risk_level);
+                  const isSelected = selected?.health_center_id === hc.health_center_id;
 
                   return (
-                    <div key={i}>
-                      {/* Boundary fill */}
-                      {polygonCoords && (
-                        <Polygon
-                          positions={polygonCoords}
-                          pathOptions={{
-                            color: c.hex,
-                            fillColor: c.hex,
-                            fillOpacity: isSelected ? 0.4 : 0.15,
-                            weight: isSelected ? 2 : 1,
-                          }}
-                          eventHandlers={{ click: () => setSelected(isSelected ? null : brgy) }}
-                        />
-                      )}
-
-                      {/* Marker */}
-                      <CircleMarker
-                        center={[lat, lng]}
-                        radius={10 + (brgy.heat_intensity ?? 0) * 14}
-                        pathOptions={{
-                          color: c.hex,
-                          fillColor: c.hex,
-                          fillOpacity: 0.8,
-                          weight: isSelected ? 3 : 1.5,
-                        }}
-                        eventHandlers={{ click: () => setSelected(isSelected ? null : brgy) }}
-                      >
-                        <Popup>
-                          <div className="text-xs space-y-1 min-w-[160px]">
-                            <p className="font-bold text-sm text-gray-800">{brgy.barangay_name}</p>
-                            <p className="text-gray-500">{brgy.health_center_name}</p>
-                            <hr />
-                            <p>Compliance: <b className="text-blue-600">{brgy.compliance_rate}%</b></p>
-                            <p>Active Cases: <b>{brgy.active_cases}</b></p>
-                            <p>At Risk: <b className="text-yellow-600">{brgy.at_risk_count}</b></p>
-                            <p>Defaulters: <b className="text-red-500">{brgy.defaulter_count}</b></p>
-                            <p>Stock: <b>{brgy.stock_status}</b></p>
+                    <CircleMarker
+                      key={hc.health_center_id}
+                      center={[lat, lng]}
+                      radius={9 + (hc.heat_intensity ?? 0) * 13}
+                      pathOptions={{
+                        color: isSelected ? "#1d4ed8" : "#fff",
+                        fillColor: c.hex,
+                        fillOpacity: 0.85,
+                        weight: isSelected ? 3 : 1.5,
+                      }}
+                      eventHandlers={{ click: () => setSelected(isSelected ? null : hc) }}
+                    >
+                      <Popup>
+                        <div className="text-xs space-y-1.5 min-w-[170px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-bold text-sm text-gray-800 leading-tight">{hc.health_center_name}</p>
+                            <span className={`shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${c.bg} ${c.text}`}>
+                              {hc.risk_level}
+                            </span>
                           </div>
-                        </Popup>
-                      </CircleMarker>
-                    </div>
+                          <p className="text-gray-400">Brgy. {hc.barangay_name}</p>
+                          <hr />
+                          <p>Compliance: <b className="text-blue-600">{hc.compliance_rate}%</b></p>
+                          <p>Active Cases: <b>{hc.active_cases}</b></p>
+                          <p>At Risk: <b className="text-yellow-600">{hc.at_risk_count}</b></p>
+                          <p>Defaulters: <b className="text-red-500">{hc.defaulter_count}</b></p>
+                          <p>Stock: <b>{hc.stock_status}</b></p>
+                        </div>
+                      </Popup>
+                    </CircleMarker>
                   );
                 })}
               </MapContainer>
@@ -269,7 +286,7 @@ const HeatMapPanel = () => {
             <div className="px-5 py-4 border-b flex items-center gap-3">
               <input
                 type="text"
-                placeholder="Search barangay..."
+                placeholder="Search health center or barangay..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -300,41 +317,44 @@ const HeatMapPanel = () => {
               {loading ? (
                 <div className="p-8 text-center text-gray-400 text-sm">Loading...</div>
               ) : filtered.length === 0 ? (
-                <div className="p-8 text-center text-gray-400 text-sm">No barangays found.</div>
-              ) : filtered.map((brgy, i) => {
-                const c = riskColor(brgy.risk_level);
-                const isSelected = selected?.barangay_id === brgy.barangay_id;
+                <div className="p-8 text-center text-gray-400 text-sm">No health centers found.</div>
+              ) : filtered.map((hc) => {
+                const c = riskColor(hc.risk_level);
+                const isSelected = selected?.health_center_id === hc.health_center_id;
                 return (
                   <div
-                    key={i}
-                    onClick={() => setSelected(isSelected ? null : brgy)}
+                    key={hc.health_center_id}
+                    onClick={() => setSelected(isSelected ? null : hc)}
                     className={`px-5 py-4 cursor-pointer transition-colors hover:bg-gray-50 ${isSelected ? "bg-blue-50 border-l-4 border-blue-500" : ""}`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`}></span>
-                        <span className="font-semibold text-gray-800 text-sm">{brgy.barangay_name}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.dot}`}></span>
+                        <div className="min-w-0">
+                          <span className="font-semibold text-gray-800 text-sm block truncate">{hc.health_center_name}</span>
+                          <span className="text-[11px] text-gray-400">Brgy. {hc.barangay_name}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${c.bg} ${c.text}`}>
-                          {brgy.risk_level}
+                          {hc.risk_level}
                         </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${stockBadge(brgy.stock_status)}`}>
-                          Stock: {brgy.stock_status}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${stockBadge(hc.stock_status)}`}>
+                          Stock: {hc.stock_status}
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                        <div className={`h-1.5 rounded-full ${c.bar}`} style={{ width: `${brgy.compliance_rate ?? 0}%` }} />
+                        <div className={`h-1.5 rounded-full ${c.bar}`} style={{ width: `${hc.compliance_rate ?? 0}%` }} />
                       </div>
-                      <span className="text-xs text-gray-500 w-12 text-right">{brgy.compliance_rate ?? 0}%</span>
+                      <span className="text-xs text-gray-500 w-12 text-right">{hc.compliance_rate ?? 0}%</span>
                     </div>
                     <div className="flex gap-4 mt-1.5 text-xs text-gray-500">
-                      <span>Cases: <b className="text-gray-700">{brgy.active_cases}</b></span>
-                      <span>At Risk: <b className="text-yellow-600">{brgy.at_risk_count}</b></span>
-                      <span>Defaulters: <b className="text-red-500">{brgy.defaulter_count}</b></span>
-                      <span>Esc L3: <b className="text-orange-600">{brgy.escalation_counts?.level_3 ?? 0}</b></span>
+                      <span>Cases: <b className="text-gray-700">{hc.active_cases}</b></span>
+                      <span>At Risk: <b className="text-yellow-600">{hc.at_risk_count}</b></span>
+                      <span>Defaulters: <b className="text-red-500">{hc.defaulter_count}</b></span>
+                      <span>Esc L3: <b className="text-orange-600">{hc.escalation_counts?.level_3 ?? 0}</b></span>
                     </div>
                   </div>
                 );
@@ -347,11 +367,11 @@ const HeatMapPanel = () => {
         {selected && (
           <div className="w-80 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
             <div className="px-5 py-4 border-b flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-gray-800">{selected.barangay_name}</h3>
-                <p className="text-xs text-gray-400">{selected.health_center_name || "—"}</p>
+              <div className="min-w-0">
+                <h3 className="font-bold text-gray-800 truncate">{selected.health_center_name || "—"}</h3>
+                <p className="text-xs text-gray-400">Brgy. {selected.barangay_name}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0 ml-2">×</button>
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto flex-1">

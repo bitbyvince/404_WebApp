@@ -32,7 +32,9 @@ const AppointmentsPanel = () => {
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [purposeFilter, setPurposeFilter] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
+  const [fromFilter, setFromFilter] = useState("");
+  const [toFilter, setToFilter] = useState("");
+  const [sortDir, setSortDir] = useState("desc");
   const [actioningId, setActioningId] = useState(null);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
 
@@ -46,7 +48,9 @@ const AppointmentsPanel = () => {
       const data = await fetchBarangayAppointments(barangay_id, {
         status: statusFilter,
         purpose: purposeFilter,
-        date: dateFilter,
+        from: fromFilter,
+        to: toFilter,
+        sortDir,
       });
       if (data.success) {
         setAppointments(data.data?.appointments || []);
@@ -58,7 +62,7 @@ const AppointmentsPanel = () => {
     } finally {
       setLoading(false);
     }
-  }, [barangay_id, statusFilter, purposeFilter, dateFilter]);
+  }, [barangay_id, statusFilter, purposeFilter, fromFilter, toFilter, sortDir]);
 
   useEffect(() => {
     load();
@@ -85,7 +89,7 @@ const AppointmentsPanel = () => {
   const confirmedCount = appointments.filter((a) => a.status === "Confirmed").length;
   const completedCount = appointments.filter((a) => a.status === "Completed").length;
   const cancelledCount = appointments.filter((a) => a.status === "Cancelled").length;
-  const hasFilters = statusFilter || purposeFilter || dateFilter;
+  const hasFilters = statusFilter || purposeFilter || fromFilter || toFilter;
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -126,15 +130,21 @@ const AppointmentsPanel = () => {
           <option value="Consultation">Consultation</option>
           <option value="Routine">Routine</option>
         </select>
-        <input
-          type="date"
-          value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-zinc-900"
-        />
+        <label className="flex items-center gap-2 text-xs text-gray-500">
+          From
+          <input type="date" value={fromFilter} onChange={(e) => setFromFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
+          to
+          <input type="date" value={toFilter} onChange={(e) => setToFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
+        </label>
+        <button
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600"
+        >
+          {sortDir === "asc" ? "Oldest → Newest" : "Newest → Oldest"}
+        </button>
         {hasFilters && (
           <button
-            onClick={() => { setStatusFilter(""); setPurposeFilter(""); setDateFilter(""); }}
+            onClick={() => { setStatusFilter(""); setPurposeFilter(""); setFromFilter(""); setToFilter(""); }}
             className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition"
           >
             ✕ Clear

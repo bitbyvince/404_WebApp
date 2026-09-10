@@ -34,21 +34,23 @@ const HeatMapPanel = () => {
   const [period, setPeriod]                 = useState("monthly");
   const [view, setView]                     = useState("map");
 
-  const admin       = JSON.parse(localStorage.getItem('admin') || '{}');
-  const barangay_id = admin.barangay_id;
+  const admin           = JSON.parse(localStorage.getItem('admin') || '{}');
+  const barangay_id     = admin.barangay_id;
+  const health_center_id = admin.health_center_id;
 
-  // Load heatmap filtered to this barangay
+  // Load heatmap filtered to this specific health center (a barangay can
+  // have more than one, so barangay_id alone isn't enough to identify
+  // "my clinic's" snapshot).
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setError("");
       try {
-        const data = await fetchHeatmap({ period, barangay_id });
+        const data = await fetchHeatmap({ period, barangay_id, health_center_id });
         if (data.success) {
           const raw = data.data ?? [];
           const list = Array.isArray(raw) ? raw : [];
-          // Get only this barangay's snapshot
-          const mine = list.find(s => s.barangay_id === barangay_id) || list[0] || null;
+          const mine = list.find(s => s.health_center_id === health_center_id) || list[0] || null;
           setSnapshot(mine);
         } else {
           setError(data.message || "Failed to load heatmap.");
@@ -60,15 +62,15 @@ const HeatMapPanel = () => {
       }
     };
     load();
-  }, [period, barangay_id]);
+  }, [period, barangay_id, health_center_id]);
 
-  // Load history for this barangay
+  // Load history for this health center
   useEffect(() => {
     if (!barangay_id) return;
     const loadHistory = async () => {
       setLoadingHistory(true);
       try {
-        const data = await fetchHeatmapHistory(barangay_id, { period, limit: 12 });
+        const data = await fetchHeatmapHistory(barangay_id, { period, limit: 12, health_center_id });
         if (data.success) {
           const raw = data.data ?? [];
           setHistory(Array.isArray(raw) ? raw : []);
@@ -80,7 +82,7 @@ const HeatMapPanel = () => {
       }
     };
     loadHistory();
-  }, [period, barangay_id]);
+  }, [period, barangay_id, health_center_id]);
 
   const mapCenter = snapshot?.coordinates?.coordinates
     ? [snapshot.coordinates.coordinates[1], snapshot.coordinates.coordinates[0]]

@@ -110,15 +110,15 @@ const DashboardPanel = () => {
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
         <div className="flex gap-3 flex-wrap items-center">
-          <select value={filters.barangay_id} onChange={(e) => handleFilterChange('barangay_id', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none">
+          <select value={filters.barangay_id} onChange={(e) => setFilters(prev => ({ ...prev, barangay_id: e.target.value, from: '', to: '' }))} className="border rounded-lg px-3 py-2 text-sm outline-none">
             <option value="">All Barangays</option>
             {barangayOptions.map((b) => <option key={b.barangay_id} value={b.barangay_id}>{b.name}</option>)}
           </select>
           <label className="flex items-center gap-2 text-xs text-gray-500">
             From
-            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
             to
-            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
           </label>
           {hasActiveFilters && (
             <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">

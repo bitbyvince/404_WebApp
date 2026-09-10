@@ -83,13 +83,20 @@ const ReportsPanel = () => {
     compliance: b.compliance_percentage ?? 0,
   }));
 
-  const stockData = (cityReport?.critical_stock_items || [])
+  // Real total remaining stock grouped by drug — not just the
+  // Critical/Stockout items, or this chart shows nothing whenever
+  // supply happens to be healthy everywhere.
+  const stockByDrug = (cityReport?.stock_items || [])
     .filter(item => !filters.barangay_id || item.barangay_id === filters.barangay_id)
-    .map((item, i) => ({
-      name: item.drug_name,
-      value: item.remaining_stock ?? 0,
-      color: COLORS[i % COLORS.length],
-    }));
+    .reduce((acc, item) => {
+      acc[item.drug_name] = (acc[item.drug_name] ?? 0) + (item.remaining_stock ?? 0);
+      return acc;
+    }, {});
+  const stockData = Object.entries(stockByDrug).map(([name, value], i) => ({
+    name,
+    value,
+    color: COLORS[i % COLORS.length],
+  }));
 
   const lineChartData = trendData.map(t => ({
     month: t.period || t.snapshot_date?.slice(0, 7),
@@ -139,15 +146,15 @@ const ReportsPanel = () => {
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
         <div className="flex gap-3 flex-wrap items-center">
-          <select value={filters.barangay_id} onChange={(e) => handleFilterChange('barangay_id', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none">
+          <select value={filters.barangay_id} onChange={(e) => setFilters(prev => ({ ...prev, barangay_id: e.target.value, from: '', to: '' }))} className="border rounded-lg px-3 py-2 text-sm outline-none">
             <option value="">All Barangays</option>
             {barangayOptions.map((b) => <option key={b.barangay_id} value={b.barangay_id}>{b.name}</option>)}
           </select>
           <label className="flex items-center gap-2 text-xs text-gray-500">
             From
-            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
             to
-            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none" />
+            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} className="border rounded-lg px-3 py-2 text-sm outline-none bg-white [color-scheme:light]" />
           </label>
           {hasActiveFilters && (
             <button onClick={clearFilters} className="px-3 py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">

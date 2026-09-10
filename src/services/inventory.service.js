@@ -31,3 +31,14 @@ export const restockInventoryItem = async (inventoryId, { quantity_added, notes 
   });
   return res.json();
 };
+
+// Create a brand-new inventory line for a drug/strength this health
+// center hasn't stocked before.
+export const createInventoryItem = async (payload) => {
+  const res = await authFetch(`${BASE_URL}/api/inventory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+};

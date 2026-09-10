@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { fetchPatients, registerPatient, fetchPatientById, resetPatientPin, exportPatientsPdf } from "../../services/patient.service.js";
+import { fetchPatients, registerPatient, updatePatient, transferPatient, deactivatePatient, reactivatePatient, fetchPatientById, resetPatientPin, exportPatientsPdf } from "../../services/patient.service.js";
 import { fetchBarangays } from "../../services/barangay.service.js";
 
 const badge = (type) => {
@@ -26,12 +26,18 @@ const formatPhilHealth = (val) => {
   return v;
 };
 
+const toDateInputValue = (date) => {
+  if (!date) return '';
+  return new Date(date).toISOString().slice(0, 10);
+};
+
 const EMPTY_FORM = {
   last_name: '', first_name: '', middle_name: '',
   birth_date: '', age: '', sex: '',
+  weight_kg: '', height_cm: '',
   philhealth_number: '', phone_number: '', email: '',
   barangay_id: '',
-  barangay_name: '', health_center_name: '',
+  barangay_name: '', health_center_id: '', health_center_name: '',
   assigned_nurse_id: '',
   diagnosis: '', date_of_diagnosis: '',
   classification: '', bacteriological_status: '',
@@ -40,9 +46,11 @@ const EMPTY_FORM = {
   date_started: '', dat_support: '', regimen_type: '',
   drug_regimen: [{ drug_name: '', strength: '', unit: 'tablet', number_to_be_taken: 1 }],
   treatment_supporter: { name: '', contact: '' },
-  contact_tracing: { number_of_contacts: 0, schedule: '' },
+  contact_tracing: { contacts: [{ name: '' }], schedule: '' },
   additional_notes: '',
 };
+
+const OTHER_DRUGS = ['Isoniazid', 'Rifampicin', 'Pyrazinamide', 'Ethambutol'];
 
 const PatientsPanel = () => {
   const [patients, setPatients] = useState([]);
@@ -68,6 +76,19 @@ const PatientsPanel = () => {
   const [resetPinLoading, setResetPinLoading] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
 
+  const [editingPatientId, setEditingPatientId] = useState(null);
+
+  const [transferTarget, setTransferTarget] = useState(null);
+  const [transferBarangayId, setTransferBarangayId] = useState('');
+  const [transferHealthCenterId, setTransferHealthCenterId] = useState('');
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferError, setTransferError] = useState('');
+
+  const [deletingPatient, setDeletingPatient] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [restoringId, setRestoringId] = useState(null);
+
   const handleView = async (patientId) => {
     setViewLoading(true);
     try {
@@ -77,6 +98,99 @@ const PatientsPanel = () => {
       console.error(err);
     } finally {
       setViewLoading(false);
+    }
+  };
+
+  const populateEditForm = (p) => {
+    setEditingPatientId(p.patient_id);
+    setForm({
+      last_name: p.last_name || '', first_name: p.first_name || '', middle_name: p.middle_name || '',
+      birth_date: toDateInputValue(p.birth_date), age: p.age ?? '', sex: p.sex || '',
+      weight_kg: p.weight_kg ?? '', height_cm: p.height_cm ?? '',
+      philhealth_number: p.philhealth_number || '', phone_number: p.phone_number || '', email: p.email || '',
+      barangay_id: p.barangay_id || '',
+      barangay_name: p.barangay_name || '', health_center_name: p.health_center_name || '',
+      assigned_nurse_id: p.assigned_nurse_id || '',
+      diagnosis: p.diagnosis || '', date_of_diagnosis: toDateInputValue(p.date_of_diagnosis),
+      classification: p.classification || '', bacteriological_status: p.bacteriological_status || '',
+      patient_type: p.patient_type || EMPTY_FORM.patient_type,
+      treatment_phase: p.treatment_phase || '', location_of_treatment: p.location_of_treatment || '',
+      date_started: toDateInputValue(p.date_started), dat_support: p.dat_support || '', regimen_type: p.regimen_type || '',
+      drug_regimen: p.drug_regimen?.length ? p.drug_regimen : EMPTY_FORM.drug_regimen,
+      treatment_supporter: { name: p.treatment_supporter?.name || '', contact: p.treatment_supporter?.contact || '' },
+      contact_tracing: {
+        contacts: p.contact_tracing?.contact_names?.length
+          ? p.contact_tracing.contact_names.map(n => ({ name: n }))
+          : [{ name: '' }],
+        schedule: toDateInputValue(p.contact_tracing?.schedule),
+      },
+      additional_notes: p.additional_notes || '',
+    });
+    setFormError('');
+    setShowModal(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      const data = await deactivatePatient(deletingPatient.patient_id);
+      if (data.success) {
+        setDeletingPatient(null);
+        loadPatients(search, filters, page);
+      } else {
+        setDeleteError(data.message || 'Failed to delete patient.');
+      }
+    } catch (err) {
+      setDeleteError('Connection error.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleRestore = async (patientId) => {
+    setRestoringId(patientId);
+    try {
+      await reactivatePatient(patientId);
+      loadPatients(search, filters, page);
+    } catch (err) {
+      console.error('Failed to restore patient:', err);
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const handleTransferSubmit = async () => {
+    setTransferLoading(true);
+    setTransferError('');
+    try {
+      const target = barangays.find(b => b.barangay_id === transferBarangayId);
+      const targetCenter = (target?.health_centers || []).find(
+        hc => hc.health_center_id === transferHealthCenterId
+      );
+      if (!target || !targetCenter) {
+        setTransferError('Please select a destination health center.');
+        setTransferLoading(false);
+        return;
+      }
+      const data = await transferPatient(transferTarget.patient_id, {
+        barangay_id: target.barangay_id,
+        barangay_name: target.name,
+        health_center_id: targetCenter.health_center_id,
+        health_center_name: targetCenter.name,
+      });
+      if (data.success) {
+        setTransferTarget(null);
+        setTransferBarangayId('');
+        setTransferHealthCenterId('');
+        loadPatients(search, filters, page);
+      } else {
+        setTransferError(data.message || 'Failed to transfer patient.');
+      }
+    } catch (err) {
+      setTransferError('Connection error.');
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -199,7 +313,30 @@ const PatientsPanel = () => {
   const handleDrugChange = (index, field, value) => {
     const updated = [...form.drug_regimen];
     updated[index] = { ...updated[index], [field]: value };
+    if (field === 'drug_name') updated[index].strength = '';
     setForm(prev => ({ ...prev, drug_regimen: updated }));
+  };
+
+  const handleContactChange = (index, value) => {
+    setForm(prev => {
+      const contacts = [...prev.contact_tracing.contacts];
+      contacts[index] = { ...contacts[index], name: value };
+      return { ...prev, contact_tracing: { ...prev.contact_tracing, contacts } };
+    });
+  };
+
+  const addContact = () => {
+    setForm(prev => ({
+      ...prev,
+      contact_tracing: { ...prev.contact_tracing, contacts: [...prev.contact_tracing.contacts, { name: '' }] },
+    }));
+  };
+
+  const removeContact = (index) => {
+    setForm(prev => ({
+      ...prev,
+      contact_tracing: { ...prev.contact_tracing, contacts: prev.contact_tracing.contacts.filter((_, i) => i !== index) },
+    }));
   };
 
   const addDrug = () => {
@@ -224,17 +361,22 @@ const PatientsPanel = () => {
 
     try {
       const matchedBarangay = barangays.find(b => b.barangay_id === form.barangay_id);
+      const matchedCenter = (matchedBarangay?.health_centers || []).find(
+        hc => hc.health_center_id === form.health_center_id
+      );
 
       const payload = {
         ...form,
         barangay_id: form.barangay_id || '',
         barangay_name: matchedBarangay?.name || form.barangay_name || '',
-        health_center_id: matchedBarangay?.health_center?.health_center_id || matchedBarangay?.health_center_id || '',
-        health_center_name: matchedBarangay?.health_center?.name || form.health_center_name || '',
+        health_center_id: matchedCenter?.health_center_id || form.health_center_id || '',
+        health_center_name: matchedCenter?.name || form.health_center_name || '',
         age: parseInt(form.age),
+        weight_kg: form.weight_kg !== '' ? parseFloat(form.weight_kg) : null,
+        height_cm: form.height_cm !== '' ? parseFloat(form.height_cm) : null,
         contact_tracing: {
-          ...form.contact_tracing,
-          number_of_contacts: parseInt(form.contact_tracing.number_of_contacts),
+          number_of_contacts: form.contact_tracing.contacts.length,
+          contact_names: form.contact_tracing.contacts.map(c => c.name),
           schedule: form.contact_tracing.schedule || null,
         },
         drug_regimen: form.drug_regimen.map(d => ({
@@ -251,19 +393,23 @@ const PatientsPanel = () => {
         additional_notes: form.additional_notes || '',
       };
 
-      // ✅ FIX: actually call registerPatient and capture the response
-      const data = await registerPatient(payload);
+      const data = editingPatientId
+        ? await updatePatient(editingPatientId, payload)
+        : await registerPatient(payload);
 
       if (data.success) {
         setForm(EMPTY_FORM);
-        loadPatients(search, filters, 1);
+        loadPatients(search, filters, editingPatientId ? page : 1);
         setShowModal(false);
-        setPinModal({
-          patient_id: data.data?.patient?.patient_id,
-          defaultPin: data.data?.defaultPin,
-        });
+        if (!editingPatientId) {
+          setPinModal({
+            patient_id: data.data?.patient?.patient_id,
+            defaultPin: data.data?.defaultPin,
+          });
+        }
+        setEditingPatientId(null);
       } else {
-        setFormError(data.message || 'Failed to register patient.');
+        setFormError(data.message || (editingPatientId ? 'Failed to update patient.' : 'Failed to register patient.'));
       }
     } catch (err) {
       setFormError('Connection error.');
@@ -288,7 +434,7 @@ const PatientsPanel = () => {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setFormError(''); setFormSuccess(''); }}
+            onClick={() => { setEditingPatientId(null); setForm(EMPTY_FORM); setShowModal(true); setFormError(''); setFormSuccess(''); }}
             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition"
           >
             + Add Patient
@@ -355,16 +501,16 @@ const PatientsPanel = () => {
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-gray-600 text-xs uppercase">
             <tr>
-              {["TB Case No.", "Last Name", "First Name", "Middle Name", "Birthdate", "Age", "Sex", "Barangay", "Treatment Health Facility", "Anatomical Site", "Bacteriologic Status", "Date of Screening", "RDT Result", "Date Started Tx.", "Actions"].map(h => (
+              {["TB Case No.", "Last Name", "First Name", "Middle Name", "Birthdate", "Age", "Sex", "Barangay", "Treatment Health Facility", "Anatomical Site", "Bacteriologic Status", "Date of Screening", "RDT Result", "Date Started Tx.", "Status", "Actions"].map(h => (
                 <th key={h} className="p-3 text-left whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={15} className="p-6 text-center text-gray-400">Loading patients...</td></tr>
+              <tr><td colSpan={16} className="p-6 text-center text-gray-400">Loading patients...</td></tr>
             ) : patients.length === 0 ? (
-              <tr><td colSpan={15} className="p-6 text-center text-gray-400">No patients found.</td></tr>
+              <tr><td colSpan={16} className="p-6 text-center text-gray-400">No patients found.</td></tr>
             ) : (
               patients.map((p, i) => (
                 <tr key={i} className="border-t hover:bg-gray-50 transition-colors">
@@ -382,11 +528,16 @@ const PatientsPanel = () => {
                   <td className="p-3 text-gray-600 whitespace-nowrap">{formatDate(p.date_of_diagnosis)}</td>
                   <td className="p-3 text-gray-600">{p.rdt_result ?? '—'}</td>
                   <td className="p-3 text-gray-600 whitespace-nowrap">{formatDate(p.date_started)}</td>
+                  <td className="p-3">
+                    <span className={`text-xs px-2 py-1 rounded-full font-semibold ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {p.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
                   <td
                     className="p-3 text-blue-600 cursor-pointer font-medium hover:underline whitespace-nowrap"
                     onClick={() => handleView(p.patient_id)}
                   >
-                    {viewLoading ? '...' : '👁 View'}
+                    {viewLoading ? '...' : 'View'}
                   </td>
                 </tr>
               ))
@@ -413,8 +564,8 @@ const PatientsPanel = () => {
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl mx-4 p-8">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">Register New Patient</h2>
-              <button onClick={() => { setShowModal(false); setFormError(''); setFormSuccess(''); setForm(EMPTY_FORM); }} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+              <h2 className="text-xl font-bold text-gray-800">{editingPatientId ? 'Edit Patient' : 'Register New Patient'}</h2>
+              <button onClick={() => { setShowModal(false); setFormError(''); setFormSuccess(''); setForm(EMPTY_FORM); setEditingPatientId(null); }} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
             </div>
 
             {formError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{formError}</div>}
@@ -439,6 +590,8 @@ const PatientsPanel = () => {
                     </select>
                   </div>
                   <div><label className={labelClass}>Birthday *</label><input type="date" className={inputClass} value={form.birth_date} onChange={e => handleFormChange('birth_date', e.target.value)} required /></div>
+                  <div><label className={labelClass}>Weight (kg)</label><input type="number" min={0} step="0.1" className={inputClass} value={form.weight_kg} onChange={e => handleFormChange('weight_kg', e.target.value)} /></div>
+                  <div><label className={labelClass}>Height (cm)</label><input type="number" min={0} step="0.1" className={inputClass} value={form.height_cm} onChange={e => handleFormChange('height_cm', e.target.value)} /></div>
                   <div>
                     <label className={labelClass}>Phone Number * (e.g. 09171234567)</label>
                     <input
@@ -458,17 +611,44 @@ const PatientsPanel = () => {
                       onChange={e => handleFormChange('philhealth_number', formatPhilHealth(e.target.value))}
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <label className={labelClass}>Barangay *</label>
                     <select
-                      className={inputClass}
+                      className={`${inputClass} ${editingPatientId ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
                       value={form.barangay_id}
-                      onChange={e => handleFormChange('barangay_id', e.target.value)}
+                      onChange={e => {
+                        const selected = barangays.find(b => b.barangay_id === e.target.value);
+                        const centers = selected?.health_centers || [];
+                        setForm(prev => ({
+                          ...prev,
+                          barangay_id: e.target.value,
+                          health_center_id: centers.length === 1 ? centers[0].health_center_id : '',
+                        }));
+                      }}
+                      disabled={!!editingPatientId}
                       required
                     >
                       <option value="">Select Barangay</option>
                       {barangays.map(b => (
                         <option key={b.barangay_id} value={b.barangay_id}>{b.name}</option>
+                      ))}
+                    </select>
+                    {editingPatientId && (
+                      <p className="mt-1 text-xs text-gray-400">Use the Transfer action to move this patient to another health center.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelClass}>Health Center *</label>
+                    <select
+                      className={`${inputClass} ${editingPatientId ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                      value={form.health_center_id}
+                      onChange={e => handleFormChange('health_center_id', e.target.value)}
+                      disabled={!!editingPatientId || !form.barangay_id}
+                      required
+                    >
+                      <option value="">Select Health Center</option>
+                      {(barangays.find(b => b.barangay_id === form.barangay_id)?.health_centers || []).map(hc => (
+                        <option key={hc.health_center_id} value={hc.health_center_id}>{hc.name}</option>
                       ))}
                     </select>
                   </div>
@@ -598,7 +778,9 @@ const PatientsPanel = () => {
                           </select>
                         )}
                       </div>
-                      <div><label className={labelClass}>Strength</label><input className={inputClass} placeholder="Strength" value={drug.strength} onChange={e => handleDrugChange(index, 'strength', e.target.value)} required /></div>
+                      {OTHER_DRUGS.includes(drug.drug_name) && (
+                        <div><label className={labelClass}>Strength</label><input className={inputClass} placeholder="e.g. 300mg" value={drug.strength} onChange={e => handleDrugChange(index, 'strength', e.target.value)} required /></div>
+                      )}
                       <div>
                         <label className={labelClass}>Unit</label>
                         <select className={inputClass} value={drug.unit} onChange={e => handleDrugChange(index, 'unit', e.target.value)}>
@@ -642,11 +824,26 @@ const PatientsPanel = () => {
 
               {/* Contact Tracing */}
               <div className="bg-gray-50 rounded-xl p-5">
-                <h3 className="text-base font-bold text-blue-700 mb-4">Contact Tracing (Optional)</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><label className={labelClass}>Number of Contacts</label><input type="number" min={0} className={inputClass} value={form.contact_tracing.number_of_contacts} onChange={e => setForm(prev => ({ ...prev, contact_tracing: { ...prev.contact_tracing, number_of_contacts: e.target.value } }))} /></div>
-                  <div><label className={labelClass}>Contact Tracing Schedule</label><input type="date" className={inputClass} value={form.contact_tracing.schedule} onChange={e => setForm(prev => ({ ...prev, contact_tracing: { ...prev.contact_tracing, schedule: e.target.value } }))} /></div>
+                <h3 className="text-base font-bold text-blue-700 mb-4">Contact Tracing</h3>
+                <div>
+                  <label className={labelClass}>Contact Tracing Schedule</label>
+                  <input type="date" className={`${inputClass} mb-3`} value={form.contact_tracing.schedule} onChange={e => setForm(prev => ({ ...prev, contact_tracing: { ...prev.contact_tracing, schedule: e.target.value } }))} />
                 </div>
+                {form.contact_tracing.contacts.map((contact, index) => (
+                  <div key={index} className="bg-white rounded-lg p-4 mb-3 border border-gray-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm font-semibold text-blue-600">Contact {index + 1}</span>
+                      {form.contact_tracing.contacts.length > 1 && (
+                        <button type="button" onClick={() => removeContact(index)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                      )}
+                    </div>
+                    <label className={labelClass}>Name *</label>
+                    <input className={inputClass} value={contact.name} onChange={e => handleContactChange(index, e.target.value)} required />
+                  </div>
+                ))}
+                <button type="button" onClick={addContact} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium mt-1">
+                  ⊕ Add Contact
+                </button>
               </div>
 
               {/* Notes */}
@@ -657,9 +854,9 @@ const PatientsPanel = () => {
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => { setShowModal(false); setForm(EMPTY_FORM); setFormError(''); }} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+                <button type="button" onClick={() => { setShowModal(false); setForm(EMPTY_FORM); setFormError(''); setEditingPatientId(null); }} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
                 <button type="submit" disabled={formLoading} className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition disabled:bg-green-400">
-                  {formLoading ? 'Registering...' : 'Save Patient'}
+                  {formLoading ? (editingPatientId ? 'Saving...' : 'Registering...') : (editingPatientId ? 'Save Changes' : 'Save Patient')}
                 </button>
               </div>
             </form>
@@ -701,12 +898,48 @@ const PatientsPanel = () => {
       {selectedPatient && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 p-8">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-800">{selectedPatient.first_name} {selectedPatient.middle_name} {selectedPatient.last_name}</h2>
                 <p className="text-xs text-gray-400 font-mono mt-1">{selectedPatient.tb_case_number}</p>
               </div>
               <button onClick={() => { setSelectedPatient(null); setResetPinResult(null); }} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+
+            <div className="flex justify-between items-center mb-6">
+              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${selectedPatient.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                {selectedPatient.is_active ? 'Active' : 'Inactive'}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { populateEditForm(selectedPatient); setSelectedPatient(null); setResetPinResult(null); }}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => { setTransferTarget(selectedPatient); setTransferBarangayId(''); setTransferError(''); setSelectedPatient(null); setResetPinResult(null); }}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-purple-50 text-purple-600 hover:bg-purple-100 transition"
+                >
+                  Transfer
+                </button>
+                {selectedPatient.is_active ? (
+                  <button
+                    onClick={() => { setDeletingPatient(selectedPatient); setDeleteError(''); setSelectedPatient(null); setResetPinResult(null); }}
+                    className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-50 text-red-600 hover:bg-red-100 transition"
+                  >
+                    Delete
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { handleRestore(selectedPatient.patient_id); setSelectedPatient(null); setResetPinResult(null); }}
+                    disabled={restoringId === selectedPatient.patient_id}
+                    className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-green-50 text-green-600 hover:bg-green-100 transition disabled:opacity-50"
+                  >
+                    {restoringId === selectedPatient.patient_id ? 'Restoring...' : 'Restore'}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
@@ -732,7 +965,7 @@ const PatientsPanel = () => {
                 disabled={resetPinLoading}
                 className="w-full py-2 bg-orange-500 text-white rounded-lg text-xs font-semibold hover:bg-orange-600 transition disabled:opacity-50"
               >
-                {resetPinLoading ? 'Resetting...' : '🔁 Reset PIN'}
+                {resetPinLoading ? 'Resetting...' : 'Reset PIN'}
               </button>
               {resetPinResult && (
                 <p className="text-xs text-gray-400 mt-2 text-center">Give this new PIN to the patient. It won't be shown again.</p>
@@ -745,6 +978,8 @@ const PatientsPanel = () => {
                 <div><p className="text-xs text-gray-400">Age</p><p className="text-gray-800">{selectedPatient.age ?? '—'}</p></div>
                 <div><p className="text-xs text-gray-400">Sex</p><p className="text-gray-800">{selectedPatient.sex ?? '—'}</p></div>
                 <div><p className="text-xs text-gray-400">Birthday</p><p className="text-gray-800">{formatDate(selectedPatient.birth_date)}</p></div>
+                <div><p className="text-xs text-gray-400">Weight</p><p className="text-gray-800">{selectedPatient.weight_kg != null ? `${selectedPatient.weight_kg} kg` : '—'}</p></div>
+                <div><p className="text-xs text-gray-400">Height</p><p className="text-gray-800">{selectedPatient.height_cm != null ? `${selectedPatient.height_cm} cm` : '—'}</p></div>
                 <div><p className="text-xs text-gray-400">PhilHealth</p><p className="text-gray-800">{selectedPatient.philhealth_number ?? '—'}</p></div>
                 <div><p className="text-xs text-gray-400">Email</p><p className="text-gray-800">{selectedPatient.email ?? '—'}</p></div>
                 <div><p className="text-xs text-gray-400">Health Center</p><p className="text-gray-800">{selectedPatient.health_center_name ?? '—'}</p></div>
@@ -805,6 +1040,82 @@ const PatientsPanel = () => {
 
             <div className="flex justify-end pt-2">
               <button onClick={() => { setSelectedPatient(null); setResetPinResult(null); }} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Patient Modal */}
+      {transferTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Transfer Patient</h2>
+              <button onClick={() => setTransferTarget(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              {transferTarget.first_name} {transferTarget.last_name} is currently at <span className="font-semibold text-gray-700">{transferTarget.health_center_name || transferTarget.barangay_name}</span>.
+            </p>
+
+            {transferError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{transferError}</div>}
+
+            <div>
+              <label className={labelClass}>Destination Barangay *</label>
+              <select
+                className={inputClass}
+                value={transferBarangayId}
+                onChange={e => {
+                  const selected = barangays.find(b => b.barangay_id === e.target.value);
+                  const centers = selected?.health_centers || [];
+                  setTransferBarangayId(e.target.value);
+                  setTransferHealthCenterId(centers.length === 1 ? centers[0].health_center_id : '');
+                }}
+              >
+                <option value="">Select Barangay</option>
+                {barangays.filter(b => b.barangay_id !== transferTarget.barangay_id).map(b => (
+                  <option key={b.barangay_id} value={b.barangay_id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {transferBarangayId && (
+              <div className="mt-4">
+                <label className={labelClass}>Destination Health Center *</label>
+                <select className={inputClass} value={transferHealthCenterId} onChange={e => setTransferHealthCenterId(e.target.value)}>
+                  <option value="">Select Health Center</option>
+                  {(barangays.find(b => b.barangay_id === transferBarangayId)?.health_centers || []).map(hc => (
+                    <option key={hc.health_center_id} value={hc.health_center_id}>{hc.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setTransferTarget(null); setTransferBarangayId(''); setTransferHealthCenterId(''); }} className="px-6 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleTransferSubmit} disabled={transferLoading || !transferBarangayId || !transferHealthCenterId} className="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 transition disabled:bg-purple-300">
+                {transferLoading ? 'Transferring...' : 'Transfer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Patient Confirmation */}
+      {deletingPatient && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-8 text-center">
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Delete patient record?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              This will archive {deletingPatient.first_name} {deletingPatient.last_name}'s record. It can be restored later from this list.
+            </p>
+            {deleteError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm text-left">{deleteError}</div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingPatient(null)} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleDeleteConfirm} disabled={deleteLoading} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition disabled:bg-red-300">
+                {deleteLoading ? 'Deleting...' : 'Yes, Delete'}
+              </button>
             </div>
           </div>
         </div>
