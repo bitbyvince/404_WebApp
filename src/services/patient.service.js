@@ -1,4 +1,5 @@
 import { authFetch } from './auth.service';
+import { queueOfflineWrite } from './offline.service';
 
 
 const BASE_URL = import.meta.env.VITE_API_URL;
@@ -55,12 +56,21 @@ export const reactivatePatient = async (patient_id) => {
 };
 
 export const registerPatient = async (payload) => {
-  const res = await authFetch(`${BASE_URL}/api/patients`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return res.json();
+  const url = `${BASE_URL}/api/patients`;
+  try {
+    const res = await authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  } catch (error) {
+    if (error instanceof TypeError || !navigator.onLine) {
+      await queueOfflineWrite({ url, method: 'POST', body: payload });
+      return { success: true, queued: true, message: 'Patient saved on this device and will sync when internet returns.' };
+    }
+    throw error;
+  }
 };
 
 export const fetchPatientById = async (patient_id) => {

@@ -306,9 +306,11 @@ export default function MedicineDispensing() {
         setNotes("");
         setSelectedPatientId(null);
 
-        await loadPatients();
-        await loadInventoryForBarangay(dispensedBarangayId);
-        await loadLogs(1);
+        if (!data.queued) {
+          await loadPatients();
+          await loadInventoryForBarangay(dispensedBarangayId);
+          await loadLogs(1);
+        }
       } else {
         alert(data.message || "Failed to record dispensing.");
       }

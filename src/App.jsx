@@ -6,11 +6,13 @@ import BarangayAdminPage from './pages/BarangayAdminPages/BarangayAdminPage';
 import BarangayDetailPage from './pages/SuperAdminPages/SuperAdminBarangayDetail';
 import BarangayAddNurse from './pages/BarangayAdminPages/BarangayAdminAddNursePage';
 import ProtectedRoute from './components/ProtectedRoute';
+import OfflineStatus from './components/OfflineStatus';
 import './App.css';
 
 function App() {
   return (
     <Router>
+      <OfflineStatus />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />

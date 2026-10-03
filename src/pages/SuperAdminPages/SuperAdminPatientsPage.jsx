@@ -401,12 +401,13 @@ const PatientsPanel = () => {
         setForm(EMPTY_FORM);
         loadPatients(search, filters, editingPatientId ? page : 1);
         setShowModal(false);
-        if (!editingPatientId) {
+        if (!editingPatientId && !data.queued) {
           setPinModal({
             patient_id: data.data?.patient?.patient_id,
             defaultPin: data.data?.defaultPin,
           });
         }
+        if (data.queued) setFormError('Patient saved on this device. It will sync when internet returns; the patient PIN will be available after sync.');
         setEditingPatientId(null);
       } else {
         setFormError(data.message || (editingPatientId ? 'Failed to update patient.' : 'Failed to register patient.'));

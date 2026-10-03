@@ -137,7 +137,8 @@ const AddPatientPanel = () => {
       const data = await registerPatient(payload);
       if (data.success) {
         setForm(EMPTY_FORM);
-        setPinModal({
+        if (data.queued) setFormError('Patient saved on this device. It will sync when internet returns; the patient PIN will be available after sync.');
+        else setPinModal({
           patient_id: data.data?.patient?.patient_id,
           defaultPin: data.data?.defaultPin,
         });

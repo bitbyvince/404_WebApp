@@ -1,4 +1,5 @@
 import { authFetch } from './auth.service';
+import { cacheOfflineRead, getOfflineRead } from './offline.service';
 
 const BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -11,8 +12,17 @@ export const fetchInventory = async ({ barangay_id, stock_status, drug_name, pag
   params.set('page', page);
   params.set('limit', limit);
 
-  const res = await authFetch(`${BASE_URL}/api/inventory?${params}`);
-  return res.json();
+  const cacheKey = `inventory:${params.toString()}`;
+  try {
+    const res = await authFetch(`${BASE_URL}/api/inventory?${params}`);
+    const data = await res.json();
+    if (res.ok) await cacheOfflineRead(cacheKey, data);
+    return data;
+  } catch (error) {
+    const cached = await getOfflineRead(cacheKey);
+    if (cached) return cached;
+    throw error;
+  }
 };
 
 // existing — used by BarangayDetailPage
