@@ -47,7 +47,7 @@ export const queueOfflineWrite = async ({ url, method, body }) => {
 export const getOfflineQueueCount = async () => {
   if (!('indexedDB' in window)) return 0;
   const items = await transact('readonly', (store) => store.getAll());
-  return (items || []).length;
+  return (items || []).filter((item) => item.url && item.method && !item.id.startsWith('cache:')).length;
 };
 
 export const cacheOfflineRead = async (key, value) => {
@@ -70,7 +70,7 @@ export const syncOfflineWrites = async () => {
   try {
     const items = await transact('readonly', (store) => store.getAll());
     const owner = ownerId();
-    for (const item of items || []) {
+    for (const item of (items || []).filter((entry) => entry.url && entry.method && !entry.id.startsWith('cache:'))) {
       // Never submit one user's saved clinical data under another account.
       if (item.ownerId !== owner) continue;
       let response;
