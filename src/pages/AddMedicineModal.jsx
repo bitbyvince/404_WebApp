@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { restockInventoryItem, createInventoryItem } from '../services/inventory.service';
+import { useCallback, useEffect, useState } from 'react';
+import { restockInventoryItem, createInventoryItem, fetchInventoryByBarangay } from '../services/inventory.service';
 
 // Strength is free text ("500", "500mg", "500 mg") depending on where it
 // was entered, so compare on the numeric value only rather than the raw
@@ -17,16 +17,17 @@ const isFixedCombo = (drugName) => ['HRZE', 'HR'].includes(drugName);
 export default function AddMedicineModal({ barangayId, healthCenterId, existingItems = [], recommendedItems = [], onClose, onSuccess }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateInventory, setDuplicateInventory] = useState(null);
 
   // existingItems may come from a barangay-wide fetch that spans more
   // than one health center — health_center_id must match too, or a
   // barangay with 2 facilities could restock the wrong one's stock.
-  const findMatch = (item) =>
-    existingItems.find((i) =>
+  const findMatch = useCallback((item, items = existingItems) =>
+    [...items, ...(duplicateInventory ? [duplicateInventory] : [])].find((i) =>
       i.health_center_id === healthCenterId &&
       i.drug_name === item.drug_name &&
       (isFixedCombo(item.drug_name) || normalizeStrength(i.strength) === normalizeStrength(item.strength))
-    );
+    ), [duplicateInventory, existingItems, healthCenterId]);
 
   // Auto-fill from the patient's weight-based recommendation, if any —
   // the admin never has to look it up or type it in manually.
@@ -42,6 +43,19 @@ export default function AddMedicineModal({ barangayId, healthCenterId, existingI
   const [newItem, setNewItem] = useState(initialRecommended && !initialMatch ? initialRecommended : null);
   const [expiryDate, setExpiryDate] = useState('');
   const [creatingItem, setCreatingItem] = useState(false);
+
+  // Inventory loads asynchronously. If the modal opens before it arrives,
+  // re-check and switch out of the new-item panel as soon as it does.
+  useEffect(() => {
+    if (!newItem) return;
+    const match = findMatch(newItem);
+    if (match) {
+      setSelectedInventoryId(match.inventory_id);
+      setNewItem(null);
+      setExpiryDate('');
+      setError('');
+    }
+  }, [findMatch, newItem]);
 
   const handleRestock = async () => {
     if (!selectedInventoryId) return setError('Select a medicine to restock.');
@@ -78,9 +92,35 @@ export default function AddMedicineModal({ barangayId, healthCenterId, existingI
         initial_quantity: newItem.quantity_needed,
         expiry_date: expiryDate,
       });
-      if (!res.success) throw new Error(res.message || 'Failed to add medicine to inventory.');
+      if (!res.success) {
+        if (res.data?.inventory_id && /already exists|use restock/i.test(res.message || '')) {
+          setDuplicateInventory(res.data);
+          setSelectedInventoryId(res.data.inventory_id);
+          setNewItem(null);
+          setExpiryDate('');
+          setError('This medicine is already recorded here. Enter the quantity to restock.');
+          return;
+        }
+        throw new Error(res.message || 'Failed to add medicine to inventory.');
+      }
       onSuccess?.();
     } catch (err) {
+      if (/already exists|use restock/i.test(err.message || '') && barangayId) {
+        try {
+          const refreshed = await fetchInventoryByBarangay(barangayId);
+          const rows = refreshed.data?.inventory ?? refreshed.data ?? [];
+          const match = Array.isArray(rows) ? findMatch(newItem, rows) : null;
+          if (match) {
+            setSelectedInventoryId(match.inventory_id);
+            setNewItem(null);
+            setExpiryDate('');
+            setError('This medicine is already recorded here. Enter the quantity to restock.');
+            return;
+          }
+        } catch (_) {
+          // Preserve the duplicate response if inventory refresh also fails.
+        }
+      }
       setError(err.message || 'Something went wrong.');
     } finally {
       setCreatingItem(false);
@@ -142,7 +182,7 @@ export default function AddMedicineModal({ barangayId, healthCenterId, existingI
               className="border px-3 py-2 rounded-lg text-sm outline-none"
             >
               <option value="">Select a medicine...</option>
-              {existingItems
+              {[...existingItems, ...(duplicateInventory && !existingItems.some((i) => i.inventory_id === duplicateInventory.inventory_id) ? [duplicateInventory] : [])]
                 .filter((item) => item.health_center_id === healthCenterId)
                 .map((item) => (
                   <option key={item.inventory_id} value={item.inventory_id}>

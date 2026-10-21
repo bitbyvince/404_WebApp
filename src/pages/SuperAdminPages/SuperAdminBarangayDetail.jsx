@@ -795,7 +795,13 @@ const BarangayDetailPage = () => {
       {restockAlert && (
         <AddMedicineModal
           barangayId={barangay_id}
-          healthCenterId={barangayData?.health_centers?.[0]?.health_center_id}
+          healthCenterId={
+            restockAlert.health_center_id ||
+            barangayData?.health_centers?.find((hc) =>
+              hc.name && restockAlert.message?.includes(hc.name)
+            )?.health_center_id ||
+            barangayData?.health_centers?.[0]?.health_center_id
+          }
           existingItems={inventory}
           recommendedItems={restockAlert.stock_request_items || []}
           onClose={() => setRestockAlert(null)}

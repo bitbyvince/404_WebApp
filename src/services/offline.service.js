@@ -45,9 +45,24 @@ export const queueOfflineWrite = async ({ url, method, body }) => {
 };
 
 export const getOfflineQueueCount = async () => {
-  if (!('indexedDB' in window)) return 0;
+  return (await getOfflineQueueItems()).length;
+};
+
+export const getOfflineQueueItems = async () => {
+  if (!('indexedDB' in window)) return [];
+  const owner = ownerId();
+  if (!owner) return [];
   const items = await transact('readonly', (store) => store.getAll());
-  return (items || []).filter((item) => item.url && item.method && !item.id.startsWith('cache:')).length;
+  return (items || [])
+    .filter((item) => item.url && item.method && !item.id.startsWith('cache:') && item.ownerId === owner)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+};
+
+const updateQueuedItem = async (item, changes) => {
+  const updated = { ...item, ...changes };
+  await transact('readwrite', (store) => store.put(updated));
+  window.dispatchEvent(new Event('offline-queue-updated'));
+  return updated;
 };
 
 export const cacheOfflineRead = async (key, value) => {
@@ -73,6 +88,12 @@ export const syncOfflineWrites = async () => {
     for (const item of (items || []).filter((entry) => entry.url && entry.method && !entry.id.startsWith('cache:'))) {
       // Never submit one user's saved clinical data under another account.
       if (item.ownerId !== owner) continue;
+      const syncingItem = await updateQueuedItem(item, {
+        syncState: 'syncing',
+        attempts: (item.attempts || 0) + 1,
+        lastAttemptAt: new Date().toISOString(),
+        lastError: null,
+      });
       let response;
       try {
         response = await fetch(item.url, {
@@ -83,10 +104,24 @@ export const syncOfflineWrites = async () => {
           },
           body: JSON.stringify(item.body),
         });
-      } catch { break; }
-      if (response.status === 401 || response.status >= 500) break;
+      } catch {
+        await updateQueuedItem(syncingItem, { syncState: 'waiting', lastError: 'Could not reach the server. It will retry when connected.' });
+        break;
+      }
       // Keep rejected records visible for manual correction; remove successful writes only.
       if (response.ok) await transact('readwrite', (store) => store.delete(item.id));
+      else {
+        let errorMessage = `Server rejected this submission (${response.status}).`;
+        try {
+          const data = await response.clone().json();
+          errorMessage = data.errors?.map((error) => error.message).filter(Boolean).join(' ') || data.message || errorMessage;
+        } catch { /* use generic HTTP error */ }
+        await updateQueuedItem(syncingItem, {
+          syncState: 'needs_attention',
+          lastError: response.status === 401 ? 'Session expired. Sign in again to sync this item.' : errorMessage,
+        });
+        if (response.status === 401 || response.status >= 500) break;
+      }
     }
   } finally {
     syncing = false;
