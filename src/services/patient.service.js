@@ -1,8 +1,22 @@
 import { authFetch } from './auth.service';
-import { queueOfflineWrite } from './offline.service';
+import { getOfflineQueueItems, queueOfflineWrite } from './offline.service';
 
 
 const BASE_URL = import.meta.env.VITE_API_URL;
+
+export const fetchPendingPatientRegistrations = async () => {
+  const items = await getOfflineQueueItems();
+  return items
+    .filter((item) => item.method === 'POST' && new URL(item.url, window.location.origin).pathname.endsWith('/api/patients'))
+    .map((item) => ({
+      ...item.body,
+      patient_id: null,
+      offline_queue_id: item.id,
+      is_pending_sync: true,
+      sync_state: item.syncState || 'waiting',
+      sync_error: item.lastError || '',
+    }));
+};
 
 export const fetchPatients = async ({ search, barangay_id, risk_level, treatment_phase, sex, min_age, max_age, from, to, is_active, page, limit }) => {
   const params = new URLSearchParams();

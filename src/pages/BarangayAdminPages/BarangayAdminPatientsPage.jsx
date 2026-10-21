@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 // AFTER
-import { fetchPatients, fetchPatientById, resetPatientPin, exportPatientsPdf, updatePatient, transferPatient, deactivatePatient, reactivatePatient } from "../../services/patient.service.js";
+import { fetchPatients, fetchPendingPatientRegistrations, fetchPatientById, resetPatientPin, exportPatientsPdf, updatePatient, transferPatient, deactivatePatient, reactivatePatient } from "../../services/patient.service.js";
 import { fetchBarangays } from "../../services/barangay.service.js";
 
 const badge = (type) => {
@@ -266,6 +266,7 @@ const PatientsPanel = () => {
   };
 
   const [patients, setPatients] = useState([]);
+  const [pendingPatients, setPendingPatients] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [search, setSearch]     = useState('');
@@ -302,6 +303,24 @@ const PatientsPanel = () => {
       setLoading(false);
     }
   }, [barangay_id]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshPendingPatients = async () => {
+      try {
+        const data = await fetchPendingPatientRegistrations();
+        if (active) setPendingPatients(data);
+      } catch (err) {
+        console.error('Failed to load locally saved patients:', err);
+      }
+    };
+    refreshPendingPatients();
+    window.addEventListener('offline-queue-updated', refreshPendingPatients);
+    return () => {
+      active = false;
+      window.removeEventListener('offline-queue-updated', refreshPendingPatients);
+    };
+  }, []);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -362,6 +381,17 @@ const PatientsPanel = () => {
     }
   };
 
+  const visiblePendingPatients = page === 1 ? pendingPatients.filter((p) => {
+    const query = search.trim().toLowerCase();
+    const name = `${p.first_name || ''} ${p.middle_name || ''} ${p.last_name || ''}`.toLowerCase();
+    if (query && !name.includes(query)) return false;
+    if (filters.sex && p.sex !== filters.sex) return false;
+    if (filters.risk_level || filters.treatment_phase || filters.from || filters.to) return false;
+    if (filters.min_age && Number(p.age) < Number(filters.min_age)) return false;
+    if (filters.max_age && Number(p.age) > Number(filters.max_age)) return false;
+    return true;
+  }) : [];
+  const displayPatients = [...visiblePendingPatients, ...patients];
   const totalPages = Math.ceil(total / limit);
   const hasActiveFilters = search || filters.risk_level || filters.treatment_phase ||
     filters.sex || filters.min_age || filters.max_age || filters.from || filters.to;
@@ -454,13 +484,13 @@ const PatientsPanel = () => {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {loading && displayPatients.length === 0 ? (
               <tr><td colSpan={15} className="p-6 text-center text-gray-400">Loading patients...</td></tr>
-            ) : patients.length === 0 ? (
+            ) : displayPatients.length === 0 ? (
               <tr><td colSpan={15} className="p-6 text-center text-gray-400">No patients found.</td></tr>
-            ) : patients.map((p, i) => (
-              <tr key={i} className="border-t hover:bg-gray-50 transition-colors">
-                <td className="p-3 font-mono text-xs text-gray-700 whitespace-nowrap">{p.tb_case_number ?? '—'}</td>
+            ) : displayPatients.map((p, i) => (
+              <tr key={p.offline_queue_id || p.patient_id || i} className={`border-t transition-colors ${p.is_pending_sync ? 'bg-amber-50/70 hover:bg-amber-50' : 'hover:bg-gray-50'}`}>
+                <td className="p-3 font-mono text-xs text-gray-700 whitespace-nowrap">{p.is_pending_sync ? 'Pending' : p.tb_case_number ?? '—'}</td>
                 <td className="p-3 font-semibold text-gray-700">{p.last_name ?? '—'}</td>
                 <td className="p-3 text-gray-700">{p.first_name ?? '—'}</td>
                 <td className="p-3 text-gray-600">{p.middle_name || '—'}</td>
@@ -478,16 +508,20 @@ const PatientsPanel = () => {
                   </span>
                 </td>
                 <td className="p-3">
-                  <span className={`text-xs px-2 py-1 rounded-full font-semibold ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                    {p.is_active ? 'Active' : 'Inactive'}
+                  <span className={`text-xs px-2 py-1 rounded-full font-semibold ${p.is_pending_sync ? 'bg-amber-100 text-amber-800' : p.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                    {p.is_pending_sync ? 'Pending sync' : p.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td
+                {p.is_pending_sync ? (
+                  <td className="p-3 text-xs text-amber-800" title={p.sync_error || 'Saved on this device'}>
+                    {p.sync_error ? 'Needs attention' : 'Saved on device'}
+                  </td>
+                ) : <td
                   className="p-3 text-blue-600 cursor-pointer font-medium hover:underline whitespace-nowrap"
                   onClick={() => handleView(p.patient_id)}
                 >
                   {viewLoading ? '...' : 'View'}
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
