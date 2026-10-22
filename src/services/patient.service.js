@@ -37,6 +37,12 @@ export const fetchPatients = async ({ search, barangay_id, risk_level, treatment
   return res.json();
 };
 
+export const fetchHealthWorkers = async () => {
+  const params = new URLSearchParams({ role: 'nurse', is_active: 'true', limit: '100' });
+  const res = await authFetch(`${BASE_URL}/api/users/staff?${params}`);
+  return res.json();
+};
+
 export const updatePatient = async (patient_id, payload) => {
   const res = await authFetch(`${BASE_URL}/api/patients/${patient_id}`, {
     method: 'PATCH',

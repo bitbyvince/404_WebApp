@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 // AFTER
-import { fetchPatients, fetchPendingPatientRegistrations, fetchPatientById, resetPatientPin, exportPatientsPdf, updatePatient, transferPatient, deactivatePatient, reactivatePatient } from "../../services/patient.service.js";
+import { fetchPatients, fetchPendingPatientRegistrations, fetchPatientById, resetPatientPin, exportPatientsPdf, updatePatient, transferPatient, deactivatePatient, reactivatePatient, fetchHealthWorkers } from "../../services/patient.service.js";
 import { fetchBarangays } from "../../services/barangay.service.js";
 
 const badge = (type) => {
@@ -60,6 +60,9 @@ const PatientsPanel = () => {
   const [resetPinLoading, setResetPinLoading] = useState(false);
 
   const [barangays, setBarangays] = useState([]);
+  const [healthWorkers, setHealthWorkers] = useState([]);
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [assignmentMessage, setAssignmentMessage] = useState('');
 
   const [editingPatientId, setEditingPatientId] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
@@ -80,6 +83,12 @@ const PatientsPanel = () => {
   const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
   const labelClass = "text-xs text-zinc-600 font-medium";
 
+  useEffect(() => {
+    fetchHealthWorkers().then(data => {
+      if (data.success) setHealthWorkers(data.data?.users || []);
+    }).catch(err => console.error('Failed to fetch health workers:', err));
+  }, []);
+
   const handleView = async (patientId) => {
     setViewLoading(true);
     try {
@@ -89,6 +98,23 @@ const PatientsPanel = () => {
       console.error(err);
     } finally {
       setViewLoading(false);
+    }
+  };
+
+  const handleAssignedWorkerChange = async (workerId) => {
+    if (!selectedPatient || !workerId || workerId === selectedPatient.assigned_nurse_id) return;
+    setAssignmentSaving(true);
+    setAssignmentMessage('');
+    try {
+      const result = await updatePatient(selectedPatient.patient_id, { assigned_nurse_id: workerId });
+      if (!result.success) throw new Error(result.message || 'Could not change the assigned health worker.');
+      setSelectedPatient(result.data);
+      setAssignmentMessage('Assigned health worker updated.');
+      loadPatients(search, filters, page);
+    } catch (err) {
+      setAssignmentMessage(err.message || 'Could not change the assigned health worker.');
+    } finally {
+      setAssignmentSaving(false);
     }
   };
 
@@ -649,6 +675,27 @@ const PatientsPanel = () => {
             </div>
           </div>
 
+          {admin.role !== 'nurse' && (
+            <div className="bg-blue-50 rounded-xl p-4 mb-4">
+              <label className="block text-xs font-bold text-blue-700 mb-2" htmlFor="assigned-health-worker">Assigned Health Worker</label>
+              <select
+                id="assigned-health-worker"
+                className={inputClass}
+                value={selectedPatient.assigned_nurse_id || ''}
+                onChange={e => handleAssignedWorkerChange(e.target.value)}
+                disabled={assignmentSaving}
+              >
+                <option value="">Select health worker</option>
+                {healthWorkers.filter(worker => worker.health_center_id === selectedPatient.health_center_id).map(worker => (
+                  <option key={worker.user_id} value={worker.user_id}>{worker.first_name} {worker.last_name}</option>
+                ))}
+              </select>
+              <p className={`mt-2 text-xs ${assignmentMessage.includes('updated') ? 'text-green-700' : 'text-red-600'}`} aria-live="polite">
+                {assignmentSaving ? 'Updating assigned worker…' : assignmentMessage}
+              </p>
+            </div>
+          )}
+
           <div className="bg-gray-50 rounded-xl p-4 mb-4">
             <p className="text-xs font-bold text-blue-700 mb-3">Diagnosis & Treatment</p>
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -751,6 +798,13 @@ const PatientsPanel = () => {
 
               <div className="bg-gray-50 rounded-xl p-5">
                 <h3 className="text-base font-bold text-blue-700 mb-4">Diagnosis</h3>
+                <div className="mb-4">
+                  <label className={labelClass}>Designated Health Worker *</label>
+                  <select className={inputClass} value={editForm.assigned_nurse_id} onChange={e => handleEditFormChange('assigned_nurse_id', e.target.value)} required>
+                    <option value="">Unassigned</option>
+                    {healthWorkers.map(worker => <option key={worker.user_id} value={worker.user_id}>{worker.first_name} {worker.last_name}</option>)}
+                  </select>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className={labelClass}>Diagnosis *</label>

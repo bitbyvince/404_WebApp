@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { registerPatient } from "../../services/patient.service.js";
+import { registerPatient, fetchHealthWorkers } from "../../services/patient.service.js";
 import { fetchBarangays } from "../../services/barangay.service.js";
 
 const formatPhone = (val) => {
@@ -42,8 +42,10 @@ const AddPatientPanel = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError]     = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+  const [healthWorkers, setHealthWorkers] = useState([]);
 
   const admin            = JSON.parse(localStorage.getItem('admin') || '{}');
+  const isHealthWorker   = admin.role === 'nurse';
   const barangayId       = localStorage.getItem('barangay_id') || '';
   const barangayName     = admin.barangay_name || '';
   const healthCenterId   = admin.health_center_id || localStorage.getItem('health_center_id') || '';
@@ -64,6 +66,12 @@ const AddPatientPanel = () => {
     };
     if (barangayId) loadHealthCenter();
   }, [barangayId]);
+
+  useEffect(() => {
+    fetchHealthWorkers().then(data => {
+      if (data.success) setHealthWorkers((data.data?.users || []).filter(u => u.health_center_id === healthCenterId));
+    }).catch(err => console.error('Failed to fetch health workers:', err));
+  }, [healthCenterId]);
 
   const inputClass = "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
   const labelClass = "text-xs text-zinc-600 font-medium";
@@ -227,6 +235,17 @@ const AddPatientPanel = () => {
         {/* Diagnosis */}
         <div className="bg-gray-50 rounded-xl p-5">
           <h3 className="text-base font-bold text-blue-700 mb-4">Diagnosis</h3>
+          {isHealthWorker ? (
+            <p className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">This patient will be assigned to you automatically.</p>
+          ) : (
+            <div className="mb-4">
+              <label className={labelClass}>Designated Health Worker *</label>
+              <select className={inputClass} value={form.assigned_nurse_id} onChange={e => handleFormChange('assigned_nurse_id', e.target.value)} required>
+                <option value="">Select health worker</option>
+                {healthWorkers.map(worker => <option key={worker.user_id} value={worker.user_id}>{worker.first_name} {worker.last_name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Diagnosis *</label>
